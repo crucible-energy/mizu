@@ -33,16 +33,16 @@ def main() -> int:
         write_safetensors(
             source_root / "model-00001-of-00002.safetensors",
             {
-                "model.embed_tokens.weight": ("BF16", [152064, 3584]),
-                "model.layers.0.self_attn.q_proj.weight": ("BF16", [3584, 3584]),
+                "model.embed_tokens.weight": ("BF16", [64, 32]),
+                "model.layers.0.self_attn.q_proj.weight": ("BF16", [32, 32]),
             },
         )
         write_safetensors(
             source_root / "model-00002-of-00002.safetensors",
             {
-                "model.norm.weight": ("F32", [3584]),
-                "lm_head.weight": ("BF16", [3584, 152064]),
-                "visual.merger.mlp.0.weight": ("F16", [1280, 3584]),
+                "model.norm.weight": ("F32", [32]),
+                "lm_head.weight": ("BF16", [32, 64]),
+                "visual.merger.mlp.0.weight": ("F16", [16, 32]),
             },
         )
         write_json(
@@ -88,7 +88,7 @@ def main() -> int:
         expect_contains(tensor_inventory, "model.embed_tokens.weight|embedding_table|bf16|row_major")
         expect_contains(
             tensor_inventory,
-            "model.layers.0.self_attn.q_proj.weight|decoder_stack|bf16|packed|weights/model-00001-of-00002.safetensors|3584x3584|bf16",
+            "model.layers.0.self_attn.q_proj.weight|decoder_stack|bf16|packed|weights/model-00001-of-00002.safetensors|32x32|bf16",
         )
         expect_contains(tensor_inventory, "lm_head.weight|token_projection|bf16|row_major")
         expect_contains(tensor_inventory, "visual.merger.mlp.0.weight|multimodal_projector|f16|packed")
@@ -108,9 +108,9 @@ def main() -> int:
         write_safetensors(
             gemma_root / "model.safetensors",
             {
-                "embed_tokens.weight": ("BF16", [256000, 4608]),
-                "decoder.layers.0.mlp.up_proj.weight": ("BF16", [4608, 18432]),
-                "mm_projector.weight": ("F16", [1152, 4608]),
+                "embed_tokens.weight": ("BF16", [128, 64]),
+                "decoder.layers.0.mlp.up_proj.weight": ("BF16", [64, 256]),
+                "mm_projector.weight": ("F16", [16, 64]),
             },
         )
         completed = subprocess.run(
@@ -160,9 +160,9 @@ def main() -> int:
             stderr=subprocess.PIPE,
         )
         expect_failed_run(
-            "safetensors importer should reject tensors whose data_offsets point beyond EOF",
+            "safetensors importer should reject tensors whose data range is shorter than dtype/shape",
             completed,
-            "points beyond EOF",
+            "expected 512 bytes from dtype/shape",
         )
 
     print("test_hf_safetensors_to_mizu: PASS")
@@ -178,13 +178,12 @@ def write_safetensors(path: Path, tensors: dict[str, tuple[str, list[int]]]) -> 
     data_offset = 0
     for name, (dtype, shape) in tensors.items():
         byte_count = max(1, product(shape) * dtype_size(dtype))
-        stored_count = min(byte_count, 32)
         header[name] = {
             "dtype": dtype,
             "shape": shape,
-            "data_offsets": [data_offset, data_offset + stored_count],
+            "data_offsets": [data_offset, data_offset + byte_count],
         }
-        data_offset += stored_count
+        data_offset += byte_count
 
     header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
     with path.open("wb") as handle:
@@ -205,7 +204,7 @@ def write_invalid_safetensors(path: Path) -> None:
     with path.open("wb") as handle:
         handle.write(struct.pack("<Q", len(header_bytes)))
         handle.write(header_bytes)
-        handle.write(b"\0" * 8)
+        handle.write(b"\0" * 64)
 
 
 def dtype_size(dtype: str) -> int:

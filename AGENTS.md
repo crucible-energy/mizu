@@ -225,6 +225,13 @@ at `/Users/sam/git/crucible/mizu`.
   remote state stays aligned with local progress. Default to publishing each
   validated useful change rather than batching unrelated work locally.
 - Pull requests should be small, reviewable, and focused on a single concern.
+- Do not open draft pull requests in this repo. If a pull request should
+  exist, open it ready for review after the relevant automated validation has
+  passed.
+- Be selective about pull request creation. Do not open a pull request merely
+  because a branch has changes; open one when the branch has reached a
+  meaningful reviewable checkpoint with sufficient automated coverage for the
+  claimed behavior.
 - Whenever giving a status update about a pull request, include the full PR URL
   in addition to any shorthand such as `#1`.
 - Squash-merge into `main` when the branch is ready, review findings are

@@ -66,6 +66,38 @@ def main() -> int:
         staged_partial_path.write_text("alpha staged\nbeta unstaged\ngamma\n", encoding="utf-8")
 
         run(["bash", str(FORMATTER), "--staged", "--write", "--restage"], cwd=repo_root)
+        expect_equal(
+            "partial staged blob preserved without unstaged bleed",
+            git_show(repo_root, "staged_partial.txt"),
+            "alpha staged\nbeta\ngamma\n",
+        )
+        expect_equal(
+            "partial staged worktree preserved",
+            staged_partial_path.read_text(encoding="utf-8"),
+            "alpha staged\nbeta unstaged\ngamma\n",
+        )
+
+        staged_newline_path = repo_root / "staged_newline.txt"
+        staged_newline_path.write_text("baseline\n", encoding="utf-8")
+        run(["git", "add", "staged_newline.txt"], cwd=repo_root)
+        run(["git", "commit", "-qm", "add newline fixture"], cwd=repo_root)
+
+        staged_newline_path.write_bytes(b"needs newline")
+        run(["git", "add", "staged_newline.txt"], cwd=repo_root)
+        staged_newline_path.write_text("needs newline\n", encoding="utf-8")
+
+        run(["bash", str(FORMATTER), "--staged", "--write", "--restage"], cwd=repo_root)
+        run(["git", "diff", "--cached", "--check"], cwd=repo_root)
+        expect_equal(
+            "staged blob normalized even when worktree is already clean",
+            git_show(repo_root, "staged_newline.txt"),
+            "needs newline\n",
+        )
+        expect_equal(
+            "clean worktree left intact",
+            staged_newline_path.read_text(encoding="utf-8"),
+            "needs newline\n",
+        )
 
     print("test_format_local: PASS")
     return 0
@@ -90,6 +122,22 @@ def run(args: list[str], cwd: Path) -> None:
 def expect_equal(label: str, actual: object, expected: object) -> None:
     if actual != expected:
         raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
+
+
+def git_show(cwd: Path, path: str) -> str:
+    completed = subprocess.run(
+        ["git", "show", f":{path}"],
+        cwd=cwd,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        print(completed.stdout)
+        print(completed.stderr, file=sys.stderr)
+        raise SystemExit(completed.returncode)
+    return completed.stdout
 
 
 if __name__ == "__main__":

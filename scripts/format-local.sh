@@ -101,10 +101,11 @@ is_text_candidate() {
 }
 
 normalize_copy() {
-  local file="$1"
-  local tmp="$2"
-  cp "$file" "$tmp"
-  if [[ "$file" == *.md ]]; then
+  local source="$1"
+  local logical_path="$2"
+  local tmp="$3"
+  cp "$source" "$tmp"
+  if [[ "$logical_path" == *.md ]]; then
     perl -0pi -e 's/\r\n/\n/g; s/\n*\z/\n/s' "$tmp"
     return
   fi
@@ -123,13 +124,37 @@ contains_path() {
   return 1
 }
 
+staged_mode() {
+  git ls-files --stage -- "$1" | awk 'NR == 1 { print $1; exit }'
+}
+
+write_index_from_tmp() {
+  local file="$1"
+  local tmp="$2"
+  local mode=''
+  local blob=''
+
+  mode="$(staged_mode "$file")"
+  [ -n "$mode" ] || {
+    printf 'format-local: missing staged mode for %s\n' "$file" >&2
+    exit 2
+  }
+
+  blob="$(git hash-object -w -- "$tmp")"
+  printf '%s %s\t%s\n' "$mode" "$blob" "$file" | git update-index --index-info
+}
+
 need git
 need perl
 
 files=()
 while IFS= read -r file; do
   [ -n "$file" ] || continue
-  [ -f "$file" ] || continue
+  if [ "$scope" = 'staged' ]; then
+    git cat-file -e ":$file" 2>/dev/null || continue
+  else
+    [ -f "$file" ] || continue
+  fi
   is_excluded "$file" && continue
   is_text_candidate "$file" || continue
   files+=("$file")
@@ -143,35 +168,37 @@ if [ "$restage" -eq 1 ]; then
   done < <(unstaged_files)
 fi
 
-changed=()
 failed=0
 
 for file in "${files[@]}"; do
+  source_file="$file"
+  staged_file=''
+  if [ "$scope" = 'staged' ]; then
+    staged_file="$(mktemp "${TMPDIR:-/tmp}/mizu-staged.XXXXXX")"
+    git show ":$file" > "$staged_file"
+    source_file="$staged_file"
+  fi
   tmp_file="$(mktemp "${TMPDIR:-/tmp}/mizu-format.XXXXXX")"
-  normalize_copy "$file" "$tmp_file"
-  if ! cmp -s "$file" "$tmp_file"; then
+  normalize_copy "$source_file" "$file" "$tmp_file"
+  if ! cmp -s "$source_file" "$tmp_file"; then
     if [ "$mode" = 'write' ]; then
-      if [ "$restage" -eq 1 ] && [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
-        printf 'format-local: refusing to restage partially staged file that requires normalization: %s\n' "$file" >&2
-        rm -f "$tmp_file"
-        exit 2
+      if [ "$scope" = 'staged' ]; then
+        if [ "$restage" -eq 1 ] && [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
+          write_index_from_tmp "$file" "$tmp_file"
+        else
+          cat "$tmp_file" > "$file"
+          git add -- "$file"
+        fi
+      else
+        cat "$tmp_file" > "$file"
       fi
-      cat "$tmp_file" > "$file"
-      rm -f "$tmp_file"
-      changed+=("$file")
     else
       printf '%s: whitespace/newline normalization required\n' "$file" >&2
       failed=1
-      rm -f "$tmp_file"
     fi
-  else
-    rm -f "$tmp_file"
   fi
+  rm -f "$tmp_file" "$staged_file"
 done
-
-if [ "$restage" -eq 1 ] && [ "${#changed[@]}" -gt 0 ]; then
-  git add -- "${changed[@]}"
-fi
 
 if [ "$failed" -ne 0 ]; then
   exit 1

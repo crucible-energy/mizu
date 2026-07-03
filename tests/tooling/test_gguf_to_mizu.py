@@ -289,8 +289,13 @@ def write_gguf(
             alignment = int(metadata.get("general.alignment", ("uint32", 32))[1])
             header_end = handle.tell()
             padding = (alignment - (header_end % alignment)) % alignment
-            payload_bytes = padding + max(offset + tensor_byte_size(shape, ggml_type) for _, shape, ggml_type, offset in tensors)
-        handle.write(b"\0" * payload_bytes)
+            payload_bytes = padding + max(
+                offset + tensor_byte_size(shape, ggml_type)
+                for _, shape, ggml_type, offset in tensors
+            )
+        if payload_bytes > 0:
+            handle.seek(payload_bytes - 1, 1)
+            handle.write(b"\0")
 
 
 def write_string(handle: object, value: str) -> None:

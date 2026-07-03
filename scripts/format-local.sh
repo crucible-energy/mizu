@@ -153,7 +153,8 @@ for file in "${files[@]}"; do
   normalize_copy "$file" "$tmp_file"
   if ! cmp -s "$file" "$tmp_file"; then
     if [ "$mode" = 'write' ]; then
-      mv "$tmp_file" "$file"
+      cat "$tmp_file" > "$file"
+      rm -f "$tmp_file"
       changed+=("$file")
     else
       printf '%s: whitespace/newline normalization required\n' "$file" >&2

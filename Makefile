@@ -90,6 +90,7 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_stage_reports
 
 TOOL_TESTS := \
+	tests/tooling/test_format_local.py \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
 

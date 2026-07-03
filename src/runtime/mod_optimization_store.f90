@@ -341,9 +341,11 @@ contains
         if (store%entries(entry_index)%candidates(candidate_index)%plan_id == 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%sample_count <= 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%is_invalid) cycle
-        quoted_key_text = quote_persisted_text(store%entries(entry_index)%key_text, MAX_CACHE_KEY_LEN)
+        quoted_key_text = &
+          quote_persisted_text(store%entries(entry_index)%key_text, MAX_CACHE_KEY_LEN)
         quoted_candidate_key = quote_persisted_text( &
-          store%entries(entry_index)%candidates(candidate_index)%candidate_key_text, MAX_CACHE_KEY_LEN)
+          store%entries(entry_index)%candidates(candidate_index)%candidate_key_text, &
+          MAX_CACHE_KEY_LEN)
         write(unit_id, "(A,1X,A,1X,I0,1X,I0,1X,I0,1X,A)", iostat=ios) &
           "candidate", trim(quoted_key_text), &
           store%entries(entry_index)%candidates(candidate_index)%plan_id, &

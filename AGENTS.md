@@ -100,18 +100,21 @@ at `/Users/sam/git/crucible/mizu`.
 
 ## Memory And Concurrency Safety
 
-- Since this repo's implementation surface is primarily Fortran with C,
-  Objective-C, and CUDA bridge seams plus small Python import tools, memory and
-  concurrency safety must be explicit repo policy, not assumed language magic.
-- The following are non-negotiable in this repo:
-  - memory safety
-  - use-after-free prevention
-  - double-free prevention
-  - dangling pointer prevention
-  - data race prevention
+- Since this repo's active runtime and bridge surfaces are primarily Fortran
+  with C, Objective-C, and CUDA seams rather than Rust-managed or
+  Python-managed runtime surfaces, these safety properties must be enforced
+  explicitly in design, implementation, review, and validation.
+- The following are non-negotiable release gates in this repo:
+  - Memory safety
+  - Use-after-free prevention
+  - Double-free prevention
+  - Dangling pointer prevention
+  - Data race prevention
 - Apply those constraints here with the simplest enforceable local posture:
   - prefer allocatable/value ownership over Fortran pointer aliasing and
     lifetime ambiguity
+  - treat Fortran `pointer`/`target` lifetimes, C interop buffers, and bridge
+    handles as exceptional surfaces that need explicit owner and cleanup rules
   - keep C, Objective-C, and CUDA bridge ownership, buffer sizes, and lifetime
     boundaries explicit and single-owner
   - avoid hidden shared mutable state; if concurrency is introduced, the

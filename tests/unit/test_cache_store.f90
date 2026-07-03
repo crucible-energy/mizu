@@ -28,24 +28,24 @@ program test_cache_store
   character(len=*), parameter :: store_path = "/tmp/mizu_test_artifact_cache.txt"
 
   call initialize_runtime_cache_bundle(bundle)
-  call touch_weight_cache_key(bundle, "weight key ane", was_hit)
+  call touch_weight_cache_key(bundle, 'weight key "ane"', was_hit)
   call expect_false("first weight touch should miss", was_hit)
-  call touch_plan_cache_key(bundle, "plan key metal", was_hit)
+  call touch_plan_cache_key(bundle, 'plan key "metal"', was_hit)
   call expect_false("first plan touch should miss", was_hit)
-  call touch_session_cache_key(bundle, "session key cuda", was_hit)
+  call touch_session_cache_key(bundle, 'session key "cuda"', was_hit)
   call expect_false("first session touch should miss", was_hit)
-  call touch_multimodal_cache_key(bundle, "mm key ane", was_hit)
+  call touch_multimodal_cache_key(bundle, 'mm key "ane"', was_hit)
   call expect_false("first multimodal touch should miss", was_hit)
 
   weight_metadata = artifact_metadata_record()
   weight_metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
   weight_metadata%execution_route = MIZU_EXEC_ROUTE_ANE
   weight_metadata%stage_kind = MIZU_STAGE_MODEL_LOAD
-  weight_metadata%artifact_format = "apple ane weight pack v1"
+  weight_metadata%artifact_format = 'apple ane weight "pack" v1'
   weight_metadata%workspace_bytes = 1048576_8
-  weight_metadata%payload_fingerprint = "1111 AAAA"
-  weight_metadata%payload_path = "artifacts/apple/ane/weights/1111 AAAA.pack"
-  call record_weight_artifact_metadata(bundle, "weight key ane", weight_metadata)
+  weight_metadata%payload_fingerprint = '1111 "AAAA"'
+  weight_metadata%payload_path = 'artifacts/apple/ane/weights/1111 "AAAA".pack'
+  call record_weight_artifact_metadata(bundle, 'weight key "ane"', weight_metadata)
 
   plan_metadata = artifact_metadata_record()
   plan_metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
@@ -54,10 +54,10 @@ program test_cache_store
   plan_metadata%is_materialized = .true.
   plan_metadata%payload_bytes = 4096
   plan_metadata%workspace_bytes = 8388608_8
-  plan_metadata%artifact_format = "apple metal prefill plan v1"
-  plan_metadata%payload_fingerprint = "2222 BBBB"
-  plan_metadata%payload_path = "artifacts/apple/metal/plans/prefill/2222 BBBB.plan"
-  call record_plan_artifact_metadata(bundle, "plan key metal", plan_metadata)
+  plan_metadata%artifact_format = 'apple metal prefill "plan" v1'
+  plan_metadata%payload_fingerprint = '2222 "BBBB"'
+  plan_metadata%payload_path = 'artifacts/apple/metal/plans/prefill/2222 "BBBB".plan'
+  call record_plan_artifact_metadata(bundle, 'plan key "metal"', plan_metadata)
 
   session_metadata = artifact_metadata_record()
   session_metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
@@ -66,20 +66,20 @@ program test_cache_store
   session_metadata%is_materialized = .true.
   session_metadata%payload_bytes = 512
   session_metadata%workspace_bytes = 4096_8
-  session_metadata%artifact_format = "apple metal session checkpoint v1"
-  session_metadata%payload_fingerprint = "2A2A 2A2A"
-  session_metadata%payload_path = "artifacts/apple/metal/sessions/2A2A 2A2A.session"
-  call record_session_artifact_metadata(bundle, "session key cuda", session_metadata)
+  session_metadata%artifact_format = 'apple metal session "checkpoint" v1'
+  session_metadata%payload_fingerprint = '2A2A "2A2A"'
+  session_metadata%payload_path = 'artifacts/apple/metal/sessions/2A2A "2A2A".session'
+  call record_session_artifact_metadata(bundle, 'session key "cuda"', session_metadata)
 
   multimodal_metadata = artifact_metadata_record()
   multimodal_metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
   multimodal_metadata%execution_route = MIZU_EXEC_ROUTE_ANE
   multimodal_metadata%stage_kind = MIZU_STAGE_PROJECTOR
-  multimodal_metadata%artifact_format = "apple ane projector cache v1"
+  multimodal_metadata%artifact_format = 'apple ane projector "cache" v1'
   multimodal_metadata%workspace_bytes = 2097152_8
-  multimodal_metadata%payload_fingerprint = "3333 CCCC"
-  multimodal_metadata%payload_path = "artifacts/apple/ane/projector/3333 CCCC.mm"
-  call record_multimodal_artifact_metadata(bundle, "mm key ane", multimodal_metadata)
+  multimodal_metadata%payload_fingerprint = '3333 "CCCC"'
+  multimodal_metadata%payload_path = 'artifacts/apple/ane/projector/3333 "CCCC".mm'
+  call record_multimodal_artifact_metadata(bundle, 'mm key "ane"', multimodal_metadata)
 
   call execute_command_line("rm -f " // store_path)
   call save_runtime_cache_bundle(bundle, store_path, saved_ok)
@@ -89,16 +89,16 @@ program test_cache_store
   call load_runtime_cache_bundle(reloaded_bundle, store_path, loaded_ok)
   call expect_true("artifact cache load should succeed", loaded_ok)
 
-  call touch_weight_cache_key(reloaded_bundle, "weight key ane", was_hit)
+  call touch_weight_cache_key(reloaded_bundle, 'weight key "ane"', was_hit)
   call expect_true("reloaded weight key should hit", was_hit)
-  call touch_plan_cache_key(reloaded_bundle, "plan key metal", was_hit)
+  call touch_plan_cache_key(reloaded_bundle, 'plan key "metal"', was_hit)
   call expect_true("reloaded plan key should hit", was_hit)
-  call touch_session_cache_key(reloaded_bundle, "session key cuda", was_hit)
+  call touch_session_cache_key(reloaded_bundle, 'session key "cuda"', was_hit)
   call expect_true("reloaded session key should hit", was_hit)
-  call touch_multimodal_cache_key(reloaded_bundle, "mm key ane", was_hit)
+  call touch_multimodal_cache_key(reloaded_bundle, 'mm key "ane"', was_hit)
   call expect_true("reloaded multimodal key should hit", was_hit)
 
-  call lookup_weight_artifact_metadata(reloaded_bundle, "weight key ane", reloaded_metadata, found)
+  call lookup_weight_artifact_metadata(reloaded_bundle, 'weight key "ane"', reloaded_metadata, found)
   call expect_true("reloaded weight metadata should exist", found)
   call expect_equal_i32("weight metadata backend", reloaded_metadata%backend_family, MIZU_BACKEND_FAMILY_APPLE)
   call expect_equal_i32("weight metadata route", reloaded_metadata%execution_route, MIZU_EXEC_ROUTE_ANE)
@@ -106,13 +106,13 @@ program test_cache_store
   call expect_false("weight metadata should remain virtual", reloaded_metadata%is_materialized)
   call expect_equal_i64("weight metadata workspace", reloaded_metadata%workspace_bytes, 1048576_8)
   call expect_equal_string("weight metadata format", trim(reloaded_metadata%artifact_format), &
-    "apple ane weight pack v1")
+    'apple ane weight "pack" v1')
   call expect_equal_string("weight metadata path", trim(reloaded_metadata%payload_path), &
-    "artifacts/apple/ane/weights/1111 AAAA.pack")
+    'artifacts/apple/ane/weights/1111 "AAAA".pack')
   call expect_equal_string("weight metadata fingerprint", trim(reloaded_metadata%payload_fingerprint), &
-    "1111 AAAA")
+    '1111 "AAAA"')
 
-  call lookup_plan_artifact_metadata(reloaded_bundle, "plan key metal", reloaded_metadata, found)
+  call lookup_plan_artifact_metadata(reloaded_bundle, 'plan key "metal"', reloaded_metadata, found)
   call expect_true("reloaded plan metadata should exist", found)
   call expect_equal_i32("plan metadata route", reloaded_metadata%execution_route, MIZU_EXEC_ROUTE_METAL)
   call expect_equal_i32("plan metadata stage", reloaded_metadata%stage_kind, MIZU_STAGE_PREFILL)
@@ -120,23 +120,23 @@ program test_cache_store
   call expect_equal_i64("plan metadata bytes", reloaded_metadata%payload_bytes, 4096_8)
   call expect_equal_i64("plan metadata workspace", reloaded_metadata%workspace_bytes, 8388608_8)
   call expect_equal_string("plan metadata format", trim(reloaded_metadata%artifact_format), &
-    "apple metal prefill plan v1")
+    'apple metal prefill "plan" v1')
   call expect_equal_string("plan metadata fingerprint", trim(reloaded_metadata%payload_fingerprint), &
-    "2222 BBBB")
+    '2222 "BBBB"')
 
-  call lookup_session_artifact_metadata(reloaded_bundle, "session key cuda", reloaded_metadata, found)
+  call lookup_session_artifact_metadata(reloaded_bundle, 'session key "cuda"', reloaded_metadata, found)
   call expect_true("reloaded session metadata should exist", found)
   call expect_true("session metadata should remain materialized", reloaded_metadata%is_materialized)
   call expect_equal_i64("session metadata bytes", reloaded_metadata%payload_bytes, 512_8)
   call expect_equal_string("session metadata path", trim(reloaded_metadata%payload_path), &
-    "artifacts/apple/metal/sessions/2A2A 2A2A.session")
+    'artifacts/apple/metal/sessions/2A2A "2A2A".session')
 
-  call lookup_multimodal_artifact_metadata(reloaded_bundle, "mm key ane", reloaded_metadata, found)
+  call lookup_multimodal_artifact_metadata(reloaded_bundle, 'mm key "ane"', reloaded_metadata, found)
   call expect_true("reloaded multimodal metadata should exist", found)
   call expect_equal_i32("multimodal metadata stage", reloaded_metadata%stage_kind, MIZU_STAGE_PROJECTOR)
   call expect_equal_i64("multimodal metadata workspace", reloaded_metadata%workspace_bytes, 2097152_8)
   call expect_equal_string("multimodal metadata fingerprint", trim(reloaded_metadata%payload_fingerprint), &
-    "3333 CCCC")
+    '3333 "CCCC"')
 
   call execute_command_line("rm -f " // store_path)
   write(*, "(A)") "test_cache_store: PASS"

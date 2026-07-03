@@ -17,7 +17,7 @@ module mod_plan_cache
 
   integer(i32), parameter :: INITIAL_PLAN_CACHE_CAPACITY = 16_i32
   integer(i32), parameter :: MAX_PLAN_CACHE_RECORD_LINE_LEN = &
-    (3_i32 * MAX_CACHE_KEY_LEN) + (3_i32 * MAX_NAME_LEN) + MAX_PATH_LEN + 512_i32
+    (4_i32 * MAX_CACHE_KEY_LEN) + (8_i32 * MAX_NAME_LEN) + (2_i32 * MAX_PATH_LEN) + 512_i32
 
   type :: plan_cache_record
     type(plan_cache_key)             :: key
@@ -288,13 +288,13 @@ contains
     character(len=MAX_NAME_LEN)       :: artifact_format
     character(len=MAX_NAME_LEN)       :: payload_fingerprint
     character(len=MAX_PATH_LEN)       :: payload_path
-    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_key_text
-    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_candidate_key_text
-    character(len=MAX_NAME_LEN + 2)   :: quoted_device_key
-    character(len=MAX_NAME_LEN + 2)   :: quoted_pack_format
-    character(len=MAX_NAME_LEN + 2)   :: quoted_artifact_format
-    character(len=MAX_NAME_LEN + 2)   :: quoted_payload_fingerprint
-    character(len=MAX_PATH_LEN + 2)   :: quoted_payload_path
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_candidate_key_text
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_device_key
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_pack_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_artifact_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_payload_fingerprint
+    character(len=(2 * MAX_PATH_LEN) + 2)   :: quoted_payload_path
 
     if (.not. plan_cache_key_is_strict(record%key)) return
     if (record%plan_id == 0_i64) return
@@ -419,13 +419,26 @@ contains
   function quote_persisted_text(text, buffer_len) result(quoted_text)
     character(len=*), intent(in) :: text
     integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len + 2) :: quoted_text
+    character(len=(2 * buffer_len) + 2) :: quoted_text
+    character(len=2 * buffer_len) :: escaped_text
+    integer(i32)                  :: src_index
+    integer(i32)                  :: dest_index
 
     quoted_text = ""
     if (trim(text) == "-") then
       quoted_text = "-"
     else
-      quoted_text = '"' // trim(text) // '"'
+      escaped_text = ""
+      dest_index = 0_i32
+      do src_index = 1_i32, len_trim(text)
+        dest_index = dest_index + 1_i32
+        escaped_text(dest_index:dest_index) = text(src_index:src_index)
+        if (text(src_index:src_index) == '"') then
+          dest_index = dest_index + 1_i32
+          escaped_text(dest_index:dest_index) = '"'
+        end if
+      end do
+      quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
   end function quote_persisted_text
 

@@ -19,7 +19,7 @@ module mod_optimization_store
 
   integer(i32), parameter :: INITIAL_ENTRY_CAPACITY = 16_i32
   integer(i32), parameter :: INITIAL_CANDIDATE_CAPACITY = 4_i32
-  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (2_i32 * MAX_CACHE_KEY_LEN) + 128_i32
+  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_CACHE_KEY_LEN) + 128_i32
 
   integer(i32), parameter :: OPT_EVIDENCE_VALID = 0_i32
   integer(i32), parameter :: OPT_INVALIDATION_WORKLOAD_CHANGED = 1_i32
@@ -323,8 +323,8 @@ contains
     character(len=*), intent(in)                 :: file_path
     logical, intent(out)                         :: saved_ok
     character(len=MAX_CACHE_KEY_LEN)             :: persisted_candidate_key
-    character(len=MAX_CACHE_KEY_LEN + 2)         :: quoted_key_text
-    character(len=MAX_CACHE_KEY_LEN + 2)         :: quoted_candidate_key
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_key_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_candidate_key
     integer(i32)                                 :: unit_id
     integer(i32)                                 :: ios
     integer(i32)                                 :: entry_index
@@ -557,13 +557,26 @@ contains
 
   function quote_persisted_text(text) result(quoted_text)
     character(len=*), intent(in)         :: text
-    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_text
+    character(len=2 * MAX_CACHE_KEY_LEN) :: escaped_text
+    integer(i32)                         :: src_index
+    integer(i32)                         :: dest_index
 
     quoted_text = ""
     if (trim(text) == "-") then
       quoted_text = "-"
     else
-      quoted_text = '"' // trim(text) // '"'
+      escaped_text = ""
+      dest_index = 0_i32
+      do src_index = 1_i32, len_trim(text)
+        dest_index = dest_index + 1_i32
+        escaped_text(dest_index:dest_index) = text(src_index:src_index)
+        if (text(src_index:src_index) == '"') then
+          dest_index = dest_index + 1_i32
+          escaped_text(dest_index:dest_index) = '"'
+        end if
+      end do
+      quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
   end function quote_persisted_text
 

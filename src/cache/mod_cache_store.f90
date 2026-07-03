@@ -19,8 +19,8 @@ module mod_cache_store
   public :: load_runtime_cache_bundle, save_runtime_cache_bundle
 
   integer(i32), parameter :: INITIAL_CACHE_CAPACITY = 16_i32
-  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (2_i32 * MAX_PATH_LEN) + &
-    (2_i32 * MAX_CACHE_KEY_LEN) + MAX_NAME_LEN + 128_i32
+  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_PATH_LEN) + &
+    (4_i32 * MAX_CACHE_KEY_LEN) + (4_i32 * MAX_NAME_LEN) + 256_i32
 
   type :: artifact_metadata_record
     integer(i32)                :: backend_family   = MIZU_BACKEND_FAMILY_NONE
@@ -402,7 +402,7 @@ contains
     type(cache_key_store), intent(in) :: store
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: index
-    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_key_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
 
     do index = 1_i32, store%entry_count
       if (len_trim(store%entries(index)) == 0) cycle
@@ -423,10 +423,10 @@ contains
     character(len=MAX_NAME_LEN)       :: artifact_format
     character(len=MAX_NAME_LEN)       :: payload_fingerprint
     character(len=MAX_PATH_LEN)       :: payload_path
-    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_key_text
-    character(len=MAX_NAME_LEN + 2)   :: quoted_artifact_format
-    character(len=MAX_NAME_LEN + 2)   :: quoted_payload_fingerprint
-    character(len=MAX_PATH_LEN + 2)   :: quoted_payload_path
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_artifact_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_payload_fingerprint
+    character(len=(2 * MAX_PATH_LEN) + 2)   :: quoted_payload_path
 
     do index = 1_i32, store%entry_count
       if (.not. artifact_metadata_is_defined(store%metadata(index))) cycle
@@ -505,13 +505,26 @@ contains
   function quote_persisted_text(text, buffer_len) result(quoted_text)
     character(len=*), intent(in) :: text
     integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len + 2) :: quoted_text
+    character(len=(2 * buffer_len) + 2) :: quoted_text
+    character(len=2 * buffer_len) :: escaped_text
+    integer(i32)                  :: src_index
+    integer(i32)                  :: dest_index
 
     quoted_text = ""
     if (trim(text) == "-") then
       quoted_text = "-"
     else
-      quoted_text = '"' // trim(text) // '"'
+      escaped_text = ""
+      dest_index = 0_i32
+      do src_index = 1_i32, len_trim(text)
+        dest_index = dest_index + 1_i32
+        escaped_text(dest_index:dest_index) = text(src_index:src_index)
+        if (text(src_index:src_index) == '"') then
+          dest_index = dest_index + 1_i32
+          escaped_text(dest_index:dest_index) = '"'
+        end if
+      end do
+      quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
   end function quote_persisted_text
 

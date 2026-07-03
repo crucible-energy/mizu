@@ -135,6 +135,36 @@ def main() -> int:
         expect_file_contains(gemma_root / "manifest.mizu", "family = gemma4")
         expect_file_contains(gemma_root / "mizu_import" / "tensors.tsv", "mm_projector.weight|multimodal_projector")
 
+        broken_root = Path(temp_root) / "Broken-Qwen"
+        broken_root.mkdir(parents=True)
+        write_json(
+            broken_root / "config.json",
+            {
+                "_name_or_path": "Broken/Qwen",
+                "model_type": "qwen3_5_vl",
+            },
+        )
+        write_invalid_safetensors(broken_root / "model.safetensors")
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(broken_root),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "safetensors importer should reject tensors whose data_offsets point beyond EOF",
+            completed,
+            "points beyond EOF",
+        )
+
     print("test_hf_safetensors_to_mizu: PASS")
     return 0
 
@@ -163,6 +193,21 @@ def write_safetensors(path: Path, tensors: dict[str, tuple[str, list[int]]]) -> 
         handle.write(b"\0" * data_offset)
 
 
+def write_invalid_safetensors(path: Path) -> None:
+    header = {
+        "model.embed_tokens.weight": {
+            "dtype": "BF16",
+            "shape": [16, 16],
+            "data_offsets": [0, 64],
+        }
+    }
+    header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    with path.open("wb") as handle:
+        handle.write(struct.pack("<Q", len(header_bytes)))
+        handle.write(header_bytes)
+        handle.write(b"\0" * 8)
+
+
 def dtype_size(dtype: str) -> int:
     return {"U8": 1, "I32": 4, "F16": 2, "BF16": 2, "F32": 4}[dtype]
 
@@ -187,6 +232,13 @@ def expect_contains(haystack: str, needle: str) -> None:
 def expect_path_exists(path: Path) -> None:
     if not path.exists():
         raise AssertionError(f"missing expected path: {path}")
+
+
+def expect_failed_run(label: str, completed: subprocess.CompletedProcess[str], stderr_needle: str) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: command unexpectedly succeeded")
+    if stderr_needle not in completed.stderr:
+        raise AssertionError(f"{label}: missing stderr text {stderr_needle!r}\n{completed.stderr}")
 
 
 if __name__ == "__main__":

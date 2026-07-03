@@ -151,6 +151,7 @@ def discover_safetensor_shards(model_root: Path) -> list[Path]:
 
 
 def read_safetensors_header(path: Path) -> dict[str, Any]:
+    file_size = path.stat().st_size
     with path.open("rb") as handle:
         header_len_bytes = handle.read(8)
         if len(header_len_bytes) != 8:
@@ -162,9 +163,39 @@ def read_safetensors_header(path: Path) -> dict[str, Any]:
         if len(header_bytes) != header_len:
             raise MizuImportError(f"truncated safetensors header in {path}")
     try:
-        return json.loads(header_bytes.decode("utf-8"))
+        header = json.loads(header_bytes.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise MizuImportError(f"invalid safetensors JSON header in {path}: {exc}") from exc
+    validate_safetensors_header(path, header, header_len, file_size)
+    return header
+
+
+def validate_safetensors_header(path: Path, header: Any, header_len: int, file_size: int) -> None:
+    if not isinstance(header, dict):
+        raise MizuImportError(f"expected safetensors header object in {path}")
+
+    payload_size = file_size - 8 - header_len
+    if payload_size < 0:
+        raise MizuImportError(f"safetensors payload starts beyond EOF in {path}")
+
+    for tensor_name, metadata in header.items():
+        if tensor_name == "__metadata__":
+            continue
+        if not isinstance(metadata, dict):
+            raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is not an object")
+
+        data_offsets = metadata.get("data_offsets")
+        if not isinstance(data_offsets, list) or len(data_offsets) != 2:
+            raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is missing data_offsets")
+        start_offset, end_offset = data_offsets
+        if not isinstance(start_offset, int) or not isinstance(end_offset, int):
+            raise MizuImportError(f"tensor {tensor_name} in {path} has non-integer data_offsets")
+        if start_offset < 0 or end_offset <= start_offset:
+            raise MizuImportError(f"tensor {tensor_name} in {path} has invalid data_offsets {data_offsets}")
+        if end_offset > payload_size:
+            raise MizuImportError(
+                f"tensor {tensor_name} in {path} points beyond EOF with data_offsets {data_offsets}"
+            )
 
 
 def normalize_tensor_record(model_root: Path, shard_path: Path, name: str, metadata: Any) -> dict[str, Any]:

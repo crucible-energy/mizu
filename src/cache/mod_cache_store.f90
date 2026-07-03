@@ -402,10 +402,12 @@ contains
     type(cache_key_store), intent(in) :: store
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: index
+    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_key_text
 
     do index = 1_i32, store%entry_count
       if (len_trim(store%entries(index)) == 0) cycle
-      write(unit_id, "(A,1X,A)", iostat=ios) trim(tag), trim(store%entries(index))
+      quoted_key_text = quote_persisted_text(store%entries(index), MAX_CACHE_KEY_LEN)
+      write(unit_id, "(A,1X,A)", iostat=ios) trim(tag), trim(quoted_key_text)
       if (ios /= 0_i32) return
     end do
   end subroutine write_cache_key_store
@@ -417,26 +419,34 @@ contains
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: index
     integer(i32)                      :: materialized_flag
+    character(len=MAX_CACHE_KEY_LEN)  :: key_text
     character(len=MAX_NAME_LEN)       :: artifact_format
     character(len=MAX_NAME_LEN)       :: payload_fingerprint
     character(len=MAX_PATH_LEN)       :: payload_path
+    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_key_text
+    character(len=MAX_NAME_LEN + 2)   :: quoted_artifact_format
+    character(len=MAX_NAME_LEN + 2)   :: quoted_payload_fingerprint
     character(len=MAX_PATH_LEN + 2)   :: quoted_payload_path
 
     do index = 1_i32, store%entry_count
       if (.not. artifact_metadata_is_defined(store%metadata(index))) cycle
 
       materialized_flag = merge(1_i32, 0_i32, store%metadata(index)%is_materialized)
+      key_text = persisted_text_or_dash(store%entries(index), MAX_CACHE_KEY_LEN)
       artifact_format = persisted_text_or_dash(store%metadata(index)%artifact_format, MAX_NAME_LEN)
       payload_fingerprint = persisted_text_or_dash(store%metadata(index)%payload_fingerprint, MAX_NAME_LEN)
       payload_path = persisted_text_or_dash(store%metadata(index)%payload_path, MAX_PATH_LEN)
-      quoted_payload_path = quote_persisted_path(payload_path)
+      quoted_key_text = quote_persisted_text(key_text, MAX_CACHE_KEY_LEN)
+      quoted_artifact_format = quote_persisted_text(artifact_format, MAX_NAME_LEN)
+      quoted_payload_fingerprint = quote_persisted_text(payload_fingerprint, MAX_NAME_LEN)
+      quoted_payload_path = quote_persisted_text(payload_path, MAX_PATH_LEN)
 
       write(unit_id, "(A,1X,A,1X,A,1X,I0,1X,I0,1X,I0,1X,I0,1X,I0,1X,I0,1X,A,1X,A,1X,A)", iostat=ios) &
-        "meta", trim(tag), trim(store%entries(index)), store%metadata(index)%backend_family, &
+        "meta", trim(tag), trim(quoted_key_text), store%metadata(index)%backend_family, &
         store%metadata(index)%execution_route, store%metadata(index)%stage_kind, &
         materialized_flag, max(0_i64, store%metadata(index)%payload_bytes), &
-        max(0_i64, store%metadata(index)%workspace_bytes), trim(artifact_format), &
-        trim(payload_fingerprint), trim(quoted_payload_path)
+        max(0_i64, store%metadata(index)%workspace_bytes), trim(quoted_artifact_format), &
+        trim(quoted_payload_fingerprint), trim(quoted_payload_path)
       if (ios /= 0_i32) return
     end do
   end subroutine write_artifact_metadata_store
@@ -492,16 +502,17 @@ contains
     if (trim(text) == "-") text = ""
   end subroutine normalize_persisted_text
 
-  function quote_persisted_path(path_text) result(quoted_text)
-    character(len=*), intent(in)  :: path_text
-    character(len=MAX_PATH_LEN + 2) :: quoted_text
+  function quote_persisted_text(text, buffer_len) result(quoted_text)
+    character(len=*), intent(in) :: text
+    integer(i32), intent(in)     :: buffer_len
+    character(len=buffer_len + 2) :: quoted_text
 
     quoted_text = ""
-    if (trim(path_text) == "-") then
+    if (trim(text) == "-") then
       quoted_text = "-"
     else
-      quoted_text = '"' // trim(path_text) // '"'
+      quoted_text = '"' // trim(text) // '"'
     end if
-  end function quote_persisted_path
+  end function quote_persisted_text
 
 end module mod_cache_store

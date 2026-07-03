@@ -295,11 +295,16 @@ def parse_gguf_file(path: Path, source_kind: str) -> GgufFile:
         if alignment <= 0:
             alignment = 32
         tensor_data_start = align_offset(handle.tell(), alignment)
+        file_size = path.stat().st_size
+        if tensor_data_start >= file_size:
+            raise GgufImportError(f"GGUF tensor data starts beyond EOF in {path}")
         tensors: list[GgufTensor] = []
         for name, shape, ggml_type, data_offset in tensor_records:
             source_offset = tensor_data_start + data_offset
             if source_offset > MAX_SAFE_I64:
                 raise GgufImportError(f"tensor {name} in {path} has unreasonable source offset {source_offset}")
+            if source_offset >= file_size:
+                raise GgufImportError(f"tensor {name} in {path} points beyond EOF at offset {source_offset}")
             tensors.append(
                 GgufTensor(
                     name=name,

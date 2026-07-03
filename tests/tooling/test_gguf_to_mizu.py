@@ -177,6 +177,39 @@ def main() -> int:
             "token_embd.weight|embedding_table|f16|row_major|weights/gemma4.gguf|2816x262144|q5_k",
         )
 
+        broken_model = temp_path / "broken.gguf"
+        write_gguf(
+            broken_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Broken Qwen3.5"),
+                "general.type": ("string", "model"),
+            },
+            [("token_embd.weight", [4096, 248320], "Q4_K", 4096)],
+            payload_bytes=128,
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(broken_model),
+                "--output-root",
+                str(temp_path / "broken_mizu"),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "GGUF importer should reject tensors that point beyond EOF",
+            completed,
+            "points beyond EOF",
+        )
+
     print("test_gguf_to_mizu: PASS")
     return 0
 
@@ -185,6 +218,7 @@ def write_gguf(
     path: Path,
     metadata: dict[str, tuple[str, object]],
     tensors: list[tuple[str, list[int], str, int]],
+    payload_bytes: int | None = None,
 ) -> None:
     with path.open("wb") as handle:
         handle.write(b"GGUF")
@@ -211,7 +245,12 @@ def write_gguf(
             handle.write(struct.pack("<I", GGML_TYPES[ggml_type]))
             handle.write(struct.pack("<Q", offset))
 
-        handle.write(b"\0" * 128)
+        if payload_bytes is None:
+            alignment = int(metadata.get("general.alignment", ("uint32", 32))[1])
+            header_end = handle.tell()
+            padding = (alignment - (header_end % alignment)) % alignment
+            payload_bytes = max(offset for _, _, _, offset in tensors) + padding + 1
+        handle.write(b"\0" * payload_bytes)
 
 
 def write_string(handle: object, value: str) -> None:
@@ -249,6 +288,13 @@ def expect_equal_list(label: str, actual: list[str], expected: list[str]) -> Non
 def expect_path_exists(path: Path) -> None:
     if not path.exists():
         raise AssertionError(f"missing expected path: {path}")
+
+
+def expect_failed_run(label: str, completed: subprocess.CompletedProcess[str], stderr_needle: str) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: command unexpectedly succeeded")
+    if stderr_needle not in completed.stderr:
+        raise AssertionError(f"{label}: missing stderr text {stderr_needle!r}\n{completed.stderr}")
 
 
 if __name__ == "__main__":

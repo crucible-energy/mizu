@@ -323,6 +323,8 @@ contains
     character(len=*), intent(in)                 :: file_path
     logical, intent(out)                         :: saved_ok
     character(len=MAX_CACHE_KEY_LEN)             :: persisted_candidate_key
+    character(len=MAX_CACHE_KEY_LEN + 2)         :: quoted_key_text
+    character(len=MAX_CACHE_KEY_LEN + 2)         :: quoted_candidate_key
     integer(i32)                                 :: unit_id
     integer(i32)                                 :: ios
     integer(i32)                                 :: entry_index
@@ -341,12 +343,14 @@ contains
         if (store%entries(entry_index)%candidates(candidate_index)%is_invalid) cycle
         persisted_candidate_key = trim(store%entries(entry_index)%candidates(candidate_index)%candidate_key_text)
         if (len_trim(persisted_candidate_key) == 0) persisted_candidate_key = "-"
+        quoted_key_text = quote_persisted_text(store%entries(entry_index)%key_text)
+        quoted_candidate_key = quote_persisted_text(persisted_candidate_key)
         write(unit_id, "(A,1X,A,1X,I0,1X,I0,1X,I0,1X,A)", iostat=ios) &
-          "candidate", trim(store%entries(entry_index)%key_text), &
+          "candidate", trim(quoted_key_text), &
           store%entries(entry_index)%candidates(candidate_index)%plan_id, &
           store%entries(entry_index)%candidates(candidate_index)%sample_count, &
           store%entries(entry_index)%candidates(candidate_index)%cumulative_elapsed_us, &
-          trim(persisted_candidate_key)
+          trim(quoted_candidate_key)
         if (ios /= 0) then
           close(unit_id)
           return
@@ -550,6 +554,18 @@ contains
       end if
     end do
   end function candidate_key_is_current
+
+  function quote_persisted_text(text) result(quoted_text)
+    character(len=*), intent(in)         :: text
+    character(len=MAX_CACHE_KEY_LEN + 2) :: quoted_text
+
+    quoted_text = ""
+    if (trim(text) == "-") then
+      quoted_text = "-"
+    else
+      quoted_text = '"' // trim(text) // '"'
+    end if
+  end function quote_persisted_text
 
   pure integer(i32) function sanitize_invalidation_reason(reason_code) result(resolved_reason)
     integer(i32), intent(in) :: reason_code

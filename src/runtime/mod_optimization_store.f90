@@ -1,7 +1,7 @@
 module mod_optimization_store
   use mod_kinds,      only: i32, i64
   use mod_cache_keys, only: MAX_CACHE_KEY_LEN
-  use mod_cache_store, only: quote_persisted_text
+  use mod_cache_store, only: normalize_legacy_persisted_field, quote_persisted_text
 
   implicit none
 
@@ -306,6 +306,7 @@ contains
       end if
       if (trim(tag) /= "candidate") cycle
       if (len_trim(key_text) == 0 .or. plan_id == 0_i64 .or. sample_count <= 0_i64) cycle
+      call normalize_legacy_persisted_field(line, 6_i32, candidate_key_text)
 
       entry_index = ensure_entry_index(store, trim(key_text))
       candidate_index = ensure_candidate_index(store%entries(entry_index), plan_id, candidate_key_text)

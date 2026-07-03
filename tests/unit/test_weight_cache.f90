@@ -170,6 +170,22 @@ program test_weight_cache
     record%artifact_metadata%payload_path, "-")
   call execute_command_line("rm -f " // cache_path)
 
+  call write_legacy_weight_cache_entry(cache_path, cuda_key)
+  call initialize_runtime_weight_cache(reloaded_cache)
+  call load_runtime_weight_cache(reloaded_cache, cache_path, loaded_ok)
+  call expect_true("legacy weight cache load should succeed", loaded_ok)
+  call lookup_weight_cache_entry(reloaded_cache, cuda_key, record, found)
+  call expect_true("legacy weight cache should preserve strict key", found)
+  call expect_equal_string("legacy weight cache should preserve derived pack identity", &
+    record%pack_identity_text, 'PACK LEGACY')
+  call expect_equal_string("legacy weight cache should restore empty artifact format", &
+    record%artifact_metadata%artifact_format, "")
+  call expect_equal_string("legacy weight cache should restore empty fingerprint", &
+    record%artifact_metadata%payload_fingerprint, "")
+  call expect_equal_string("legacy weight cache should restore empty path", &
+    record%artifact_metadata%payload_path, "")
+  call execute_command_line("rm -f " // cache_path)
+
   call reset_runtime_weight_cache(cache)
   call lookup_weight_cache_entry(cache, cuda_key, record, found)
   call expect_false("reset weight cache should clear entries", found)
@@ -230,5 +246,44 @@ contains
       error stop 1
     end if
   end subroutine expect_false
+
+  subroutine write_legacy_weight_cache_entry(file_path, key)
+    character(len=*), intent(in) :: file_path
+    type(weight_cache_key), intent(in) :: key
+    integer(i32) :: unit_id
+    integer(i32) :: ios
+
+    open(newunit=unit_id, file=trim(file_path), status="replace", action="write", iostat=ios)
+    call expect_equal_i32("legacy weight cache fixture should open", ios, 0_i32)
+    write(unit_id, "(A,1X,A,1X,I0,1X,A,5(1X,I0),2(1X,I0),3(1X,I0),2(1X,A),4(1X,I0),2(1X,I0),3(1X,A))", &
+        iostat=ios) &
+      "entry", trim(quote_field(key%key_text)), 9_i64, trim(quote_field('PACK LEGACY')), &
+      key%versions%schema_version, key%versions%abi_version, key%versions%planner_version, &
+      key%versions%pack_version, key%versions%backend_version, key%logical_model_hash, &
+      key%projector_revision, key%model_family, key%backend_family, key%execution_route, &
+      trim(quote_field(key%device_key)), trim(quote_field(key%pack_format)), key%backend_family, &
+      key%execution_route, MIZU_STAGE_MODEL_LOAD, 1_i32, 1048576_i64, 2097152_i64, "-", "-", "-"
+    call expect_equal_i32("legacy weight cache fixture should write", ios, 0_i32)
+    close(unit_id)
+  end subroutine write_legacy_weight_cache_entry
+
+  function quote_field(text) result(quoted_text)
+    character(len=*), intent(in) :: text
+    character(len=(2 * len(text)) + 2) :: quoted_text
+    integer(i32) :: src_index
+    integer(i32) :: dest_index
+
+    quoted_text = '""'
+    dest_index = 0_i32
+    do src_index = 1_i32, len_trim(text)
+      dest_index = dest_index + 1_i32
+      quoted_text(dest_index + 1_i32:dest_index + 1_i32) = text(src_index:src_index)
+      if (text(src_index:src_index) == '"') then
+        dest_index = dest_index + 1_i32
+        quoted_text(dest_index + 1_i32:dest_index + 1_i32) = '"'
+      end if
+    end do
+    if (dest_index > 0_i32) quoted_text = '"' // quoted_text(2:dest_index + 1_i32) // '"'
+  end function quote_field
 
 end program test_weight_cache

@@ -17,7 +17,7 @@ module mod_cache_store
   public :: lookup_weight_artifact_metadata, lookup_plan_artifact_metadata
   public :: lookup_session_artifact_metadata, lookup_multimodal_artifact_metadata
   public :: load_runtime_cache_bundle, save_runtime_cache_bundle
-  public :: quote_persisted_text
+  public :: quote_persisted_text, normalize_legacy_persisted_field
 
   integer(i32), parameter :: INITIAL_CACHE_CAPACITY = 16_i32
   integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_PATH_LEN) + &
@@ -255,6 +255,9 @@ contains
         metadata%execution_route = execution_route
         metadata%stage_kind = stage_kind
         metadata%is_materialized = (materialized_flag /= 0_i32)
+        call normalize_legacy_persisted_field(line, 10_i32, metadata%artifact_format)
+        call normalize_legacy_persisted_field(line, 11_i32, metadata%payload_fingerprint)
+        call normalize_legacy_persisted_field(line, 12_i32, metadata%payload_path)
         select case (trim(kind_tag))
         case ("weight")
           call record_cache_key_metadata(bundle%weight_store, trim(key_text), metadata)
@@ -503,5 +506,81 @@ contains
       quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
   end function quote_persisted_text
+
+  subroutine normalize_legacy_persisted_field(line, field_index, text)
+    character(len=*), intent(in)    :: line
+    integer(i32), intent(in)        :: field_index
+    character(len=*), intent(inout) :: text
+
+    if (legacy_persisted_field_is_empty(line, field_index)) text = ""
+  end subroutine normalize_legacy_persisted_field
+
+  pure logical function legacy_persisted_field_is_empty(line, field_index) result(is_empty)
+    character(len=*), intent(in) :: line
+    integer(i32), intent(in)     :: field_index
+    integer(i32)                 :: line_len
+    integer(i32)                 :: index
+    integer(i32)                 :: current_field
+    integer(i32)                 :: token_len
+    logical                      :: quoted_token
+    logical                      :: is_dash_token
+    character(len=1)             :: ch
+
+    is_empty = .false.
+    if (field_index <= 0_i32) return
+
+    line_len = len_trim(line)
+    index = 1_i32
+    current_field = 0_i32
+    do while (index <= line_len)
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (ch /= " " .and. ch /= achar(9)) exit
+        index = index + 1_i32
+      end do
+      if (index > line_len) exit
+
+      current_field = current_field + 1_i32
+      quoted_token = (line(index:index) == '"')
+      token_len = 0_i32
+      is_dash_token = .true.
+      if (quoted_token) index = index + 1_i32
+
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (quoted_token) then
+          if (ch == '"') then
+            if (index < line_len .and. line(index + 1_i32:index + 1_i32) == '"') then
+              token_len = token_len + 1_i32
+              is_dash_token = .false.
+              index = index + 2_i32
+              cycle
+            end if
+            index = index + 1_i32
+            exit
+          end if
+        else if (ch == " " .or. ch == achar(9)) then
+          exit
+        end if
+
+        token_len = token_len + 1_i32
+        if (token_len > 1_i32 .or. ch /= "-") is_dash_token = .false.
+        index = index + 1_i32
+      end do
+
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (ch == " " .or. ch == achar(9)) exit
+        token_len = token_len + 1_i32
+        is_dash_token = .false.
+        index = index + 1_i32
+      end do
+
+      if (current_field == field_index) then
+        is_empty = (.not. quoted_token .and. token_len == 1_i32 .and. is_dash_token)
+        return
+      end if
+    end do
+  end function legacy_persisted_field_is_empty
 
 end module mod_cache_store

@@ -4,7 +4,8 @@ module mod_plan_cache
   use mod_types,       only: MIZU_BACKEND_FAMILY_NONE, MIZU_DTYPE_UNKNOWN, &
                              MIZU_EXEC_ROUTE_NONE, MIZU_STAGE_NONE
   use mod_cache_keys,  only: MAX_CACHE_KEY_LEN, plan_cache_key
-  use mod_cache_store, only: artifact_metadata_record, quote_persisted_text
+  use mod_cache_store, only: artifact_metadata_record, normalize_legacy_persisted_field, &
+                             quote_persisted_text
 
   implicit none
 
@@ -242,6 +243,10 @@ contains
       if (trim(tag) /= "entry") cycle
 
       metadata%is_materialized = (materialized_flag /= 0_i32)
+      call normalize_legacy_persisted_field(line, 5_i32, candidate_key_text)
+      call normalize_legacy_persisted_field(line, 35_i32, metadata%artifact_format)
+      call normalize_legacy_persisted_field(line, 36_i32, metadata%payload_fingerprint)
+      call normalize_legacy_persisted_field(line, 37_i32, metadata%payload_path)
       call remember_loaded_plan_record(cache, key, plan_id, max(0_i64, hit_count), &
         candidate_key_text, metadata, loaded_count)
     end do

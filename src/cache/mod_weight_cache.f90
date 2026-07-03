@@ -4,7 +4,8 @@ module mod_weight_cache
   use mod_types,       only: MIZU_BACKEND_FAMILY_NONE, MIZU_EXEC_ROUTE_NONE, &
                              MIZU_STAGE_MODEL_LOAD, MIZU_STAGE_NONE
   use mod_cache_keys,  only: MAX_CACHE_KEY_LEN, weight_cache_key
-  use mod_cache_store, only: artifact_metadata_record, quote_persisted_text
+  use mod_cache_store, only: artifact_metadata_record, normalize_legacy_persisted_field, &
+                             quote_persisted_text
 
   implicit none
 
@@ -252,6 +253,10 @@ contains
       if (trim(tag) /= "entry") cycle
 
       metadata%is_materialized = (materialized_flag /= 0_i32)
+      call normalize_legacy_persisted_field(line, 4_i32, pack_identity_text)
+      call normalize_legacy_persisted_field(line, 23_i32, metadata%artifact_format)
+      call normalize_legacy_persisted_field(line, 24_i32, metadata%payload_fingerprint)
+      call normalize_legacy_persisted_field(line, 25_i32, metadata%payload_path)
       call remember_loaded_weight_record(cache, key, max(0_i64, hit_count), pack_identity_text, &
         metadata, loaded_count)
     end do

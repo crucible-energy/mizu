@@ -370,7 +370,7 @@ def parse_gguf_file(path: Path, source_kind: str) -> GgufFile:
         metadata_count=metadata_count,
         metadata=metadata,
         tensors=tensors,
-        file_size=path.stat().st_size,
+        file_size=file_size,
     )
 
 

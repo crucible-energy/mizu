@@ -4,7 +4,7 @@ module mod_plan_cache
   use mod_types,       only: MIZU_BACKEND_FAMILY_NONE, MIZU_DTYPE_UNKNOWN, &
                              MIZU_EXEC_ROUTE_NONE, MIZU_STAGE_NONE
   use mod_cache_keys,  only: MAX_CACHE_KEY_LEN, plan_cache_key
-  use mod_cache_store, only: artifact_metadata_record
+  use mod_cache_store, only: artifact_metadata_record, quote_persisted_text
 
   implicit none
 
@@ -242,10 +242,6 @@ contains
       if (trim(tag) /= "entry") cycle
 
       metadata%is_materialized = (materialized_flag /= 0_i32)
-      call normalize_persisted_text(candidate_key_text)
-      call normalize_persisted_text(metadata%artifact_format)
-      call normalize_persisted_text(metadata%payload_fingerprint)
-      call normalize_persisted_text(metadata%payload_path)
       call remember_loaded_plan_record(cache, key, plan_id, max(0_i64, hit_count), &
         candidate_key_text, metadata, loaded_count)
     end do
@@ -300,14 +296,14 @@ contains
     if (record%plan_id == 0_i64) return
     if (.not. metadata_matches_key(record%artifact_metadata, record%key)) return
 
-    key_text = persisted_text_or_dash(record%key%key_text, MAX_CACHE_KEY_LEN)
-    candidate_key_text = persisted_text_or_dash(record%candidate_key_text, MAX_CACHE_KEY_LEN)
-    device_key = persisted_text_or_dash(record%key%device_key, MAX_NAME_LEN)
-    pack_format = persisted_text_or_dash(record%key%pack_format, MAX_NAME_LEN)
+    key_text = record%key%key_text
+    candidate_key_text = record%candidate_key_text
+    device_key = record%key%device_key
+    pack_format = record%key%pack_format
     materialized_flag = merge(1_i32, 0_i32, record%artifact_metadata%is_materialized)
-    artifact_format = persisted_text_or_dash(record%artifact_metadata%artifact_format, MAX_NAME_LEN)
-    payload_fingerprint = persisted_text_or_dash(record%artifact_metadata%payload_fingerprint, MAX_NAME_LEN)
-    payload_path = persisted_text_or_dash(record%artifact_metadata%payload_path, MAX_PATH_LEN)
+    artifact_format = record%artifact_metadata%artifact_format
+    payload_fingerprint = record%artifact_metadata%payload_fingerprint
+    payload_path = record%artifact_metadata%payload_path
     quoted_key_text = quote_persisted_text(key_text, MAX_CACHE_KEY_LEN)
     quoted_candidate_key_text = quote_persisted_text(candidate_key_text, MAX_CACHE_KEY_LEN)
     quoted_device_key = quote_persisted_text(device_key, MAX_NAME_LEN)
@@ -396,50 +392,5 @@ contains
 
     write(text, "(I0)") value
   end function i64_to_text
-
-  function persisted_text_or_dash(text, buffer_len) result(persisted_text)
-    character(len=*), intent(in) :: text
-    integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len)    :: persisted_text
-
-    persisted_text = ""
-    if (len_trim(text) > 0) then
-      persisted_text = trim(text)
-    else
-      persisted_text = "-"
-    end if
-  end function persisted_text_or_dash
-
-  subroutine normalize_persisted_text(text)
-    character(len=*), intent(inout) :: text
-
-    if (trim(text) == "-") text = ""
-  end subroutine normalize_persisted_text
-
-  function quote_persisted_text(text, buffer_len) result(quoted_text)
-    character(len=*), intent(in) :: text
-    integer(i32), intent(in)     :: buffer_len
-    character(len=(2 * buffer_len) + 2) :: quoted_text
-    character(len=2 * buffer_len) :: escaped_text
-    integer(i32)                  :: src_index
-    integer(i32)                  :: dest_index
-
-    quoted_text = ""
-    if (trim(text) == "-") then
-      quoted_text = "-"
-    else
-      escaped_text = ""
-      dest_index = 0_i32
-      do src_index = 1_i32, len_trim(text)
-        dest_index = dest_index + 1_i32
-        escaped_text(dest_index:dest_index) = text(src_index:src_index)
-        if (text(src_index:src_index) == '"') then
-          dest_index = dest_index + 1_i32
-          escaped_text(dest_index:dest_index) = '"'
-        end if
-      end do
-      quoted_text = '"' // escaped_text(:dest_index) // '"'
-    end if
-  end function quote_persisted_text
 
 end module mod_plan_cache

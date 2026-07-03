@@ -17,6 +17,7 @@ module mod_cache_store
   public :: lookup_weight_artifact_metadata, lookup_plan_artifact_metadata
   public :: lookup_session_artifact_metadata, lookup_multimodal_artifact_metadata
   public :: load_runtime_cache_bundle, save_runtime_cache_bundle
+  public :: quote_persisted_text
 
   integer(i32), parameter :: INITIAL_CACHE_CAPACITY = 16_i32
   integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_PATH_LEN) + &
@@ -254,10 +255,6 @@ contains
         metadata%execution_route = execution_route
         metadata%stage_kind = stage_kind
         metadata%is_materialized = (materialized_flag /= 0_i32)
-        call normalize_persisted_text(metadata%artifact_format)
-        call normalize_persisted_text(metadata%payload_fingerprint)
-        call normalize_persisted_text(metadata%payload_path)
-
         select case (trim(kind_tag))
         case ("weight")
           call record_cache_key_metadata(bundle%weight_store, trim(key_text), metadata)
@@ -432,10 +429,10 @@ contains
       if (.not. artifact_metadata_is_defined(store%metadata(index))) cycle
 
       materialized_flag = merge(1_i32, 0_i32, store%metadata(index)%is_materialized)
-      key_text = persisted_text_or_dash(store%entries(index), MAX_CACHE_KEY_LEN)
-      artifact_format = persisted_text_or_dash(store%metadata(index)%artifact_format, MAX_NAME_LEN)
-      payload_fingerprint = persisted_text_or_dash(store%metadata(index)%payload_fingerprint, MAX_NAME_LEN)
-      payload_path = persisted_text_or_dash(store%metadata(index)%payload_path, MAX_PATH_LEN)
+      key_text = store%entries(index)
+      artifact_format = store%metadata(index)%artifact_format
+      payload_fingerprint = store%metadata(index)%payload_fingerprint
+      payload_path = store%metadata(index)%payload_path
       quoted_key_text = quote_persisted_text(key_text, MAX_CACHE_KEY_LEN)
       quoted_artifact_format = quote_persisted_text(artifact_format, MAX_NAME_LEN)
       quoted_payload_fingerprint = quote_persisted_text(payload_fingerprint, MAX_NAME_LEN)
@@ -483,25 +480,6 @@ contains
     call move_alloc(resized_metadata, store%metadata)
   end subroutine ensure_cache_key_store_capacity
 
-  function persisted_text_or_dash(text, buffer_len) result(persisted_text)
-    character(len=*), intent(in) :: text
-    integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len)    :: persisted_text
-
-    persisted_text = ""
-    if (len_trim(text) > 0) then
-      persisted_text = trim(text)
-    else
-      persisted_text = "-"
-    end if
-  end function persisted_text_or_dash
-
-  subroutine normalize_persisted_text(text)
-    character(len=*), intent(inout) :: text
-
-    if (trim(text) == "-") text = ""
-  end subroutine normalize_persisted_text
-
   function quote_persisted_text(text, buffer_len) result(quoted_text)
     character(len=*), intent(in) :: text
     integer(i32), intent(in)     :: buffer_len
@@ -510,20 +488,18 @@ contains
     integer(i32)                  :: src_index
     integer(i32)                  :: dest_index
 
-    quoted_text = ""
-    if (trim(text) == "-") then
-      quoted_text = "-"
-    else
-      escaped_text = ""
-      dest_index = 0_i32
-      do src_index = 1_i32, len_trim(text)
+    quoted_text = '""'
+    escaped_text = ""
+    dest_index = 0_i32
+    do src_index = 1_i32, len_trim(text)
+      dest_index = dest_index + 1_i32
+      escaped_text(dest_index:dest_index) = text(src_index:src_index)
+      if (text(src_index:src_index) == '"') then
         dest_index = dest_index + 1_i32
-        escaped_text(dest_index:dest_index) = text(src_index:src_index)
-        if (text(src_index:src_index) == '"') then
-          dest_index = dest_index + 1_i32
-          escaped_text(dest_index:dest_index) = '"'
-        end if
-      end do
+        escaped_text(dest_index:dest_index) = '"'
+      end if
+    end do
+    if (dest_index > 0_i32) then
       quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
   end function quote_persisted_text

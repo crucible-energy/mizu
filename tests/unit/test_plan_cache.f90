@@ -142,6 +142,33 @@ program test_plan_cache
   call lookup_plan_cache_entry(warmed_cache, route_changed_key, record, found)
   call expect_true("warmed plan cache should keep existing entries", found)
   call expect_equal_i64("warmed plan cache should keep existing plan id", record%plan_id, 404_i64)
+
+  metadata%backend_family = MIZU_BACKEND_FAMILY_CUDA
+  metadata%execution_route = MIZU_EXEC_ROUTE_CUDA
+  metadata%artifact_format = "-"
+  metadata%payload_fingerprint = "-"
+  metadata%payload_path = "-"
+  call initialize_runtime_plan_cache(cache)
+  call record_plan_cache_entry(cache, cuda_key, 505_i64, metadata, status_code, &
+    candidate_key_text="-")
+  call expect_equal_i32("literal dash plan entry should record", status_code, MIZU_STATUS_OK)
+  call execute_command_line("rm -f " // cache_path)
+  call save_runtime_plan_cache(cache, cache_path, saved_ok)
+  call expect_true("dash-valued plan cache save should succeed", saved_ok)
+  call initialize_runtime_plan_cache(reloaded_cache)
+  call load_runtime_plan_cache(reloaded_cache, cache_path, loaded_ok)
+  call expect_true("dash-valued plan cache load should succeed", loaded_ok)
+  call lookup_plan_cache_entry(reloaded_cache, cuda_key, record, found)
+  call expect_true("dash-valued plan cache should hit strict key", found)
+  call expect_equal_i64("dash-valued plan cache should restore plan id", record%plan_id, 505_i64)
+  call expect_equal_string("dash-valued plan candidate key should round-trip", &
+    record%candidate_key_text, "-")
+  call expect_equal_string("dash-valued plan format should round-trip", &
+    record%artifact_metadata%artifact_format, "-")
+  call expect_equal_string("dash-valued plan fingerprint should round-trip", &
+    record%artifact_metadata%payload_fingerprint, "-")
+  call expect_equal_string("dash-valued plan path should round-trip", &
+    record%artifact_metadata%payload_path, "-")
   call execute_command_line("rm -f " // cache_path)
 
   call reset_runtime_plan_cache(cache)

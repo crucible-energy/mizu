@@ -1,6 +1,7 @@
 module mod_optimization_store
   use mod_kinds,      only: i32, i64
   use mod_cache_keys, only: MAX_CACHE_KEY_LEN
+  use mod_cache_store, only: quote_persisted_text
 
   implicit none
 
@@ -305,7 +306,6 @@ contains
       end if
       if (trim(tag) /= "candidate") cycle
       if (len_trim(key_text) == 0 .or. plan_id == 0_i64 .or. sample_count <= 0_i64) cycle
-      if (trim(candidate_key_text) == "-") candidate_key_text = ""
 
       entry_index = ensure_entry_index(store, trim(key_text))
       candidate_index = ensure_candidate_index(store%entries(entry_index), plan_id, candidate_key_text)
@@ -322,7 +322,6 @@ contains
     type(runtime_optimization_store), intent(in) :: store
     character(len=*), intent(in)                 :: file_path
     logical, intent(out)                         :: saved_ok
-    character(len=MAX_CACHE_KEY_LEN)             :: persisted_candidate_key
     character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_key_text
     character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_candidate_key
     integer(i32)                                 :: unit_id
@@ -341,10 +340,9 @@ contains
         if (store%entries(entry_index)%candidates(candidate_index)%plan_id == 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%sample_count <= 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%is_invalid) cycle
-        persisted_candidate_key = trim(store%entries(entry_index)%candidates(candidate_index)%candidate_key_text)
-        if (len_trim(persisted_candidate_key) == 0) persisted_candidate_key = "-"
-        quoted_key_text = quote_persisted_text(store%entries(entry_index)%key_text)
-        quoted_candidate_key = quote_persisted_text(persisted_candidate_key)
+        quoted_key_text = quote_persisted_text(store%entries(entry_index)%key_text, MAX_CACHE_KEY_LEN)
+        quoted_candidate_key = quote_persisted_text( &
+          store%entries(entry_index)%candidates(candidate_index)%candidate_key_text, MAX_CACHE_KEY_LEN)
         write(unit_id, "(A,1X,A,1X,I0,1X,I0,1X,I0,1X,A)", iostat=ios) &
           "candidate", trim(quoted_key_text), &
           store%entries(entry_index)%candidates(candidate_index)%plan_id, &
@@ -554,31 +552,6 @@ contains
       end if
     end do
   end function candidate_key_is_current
-
-  function quote_persisted_text(text) result(quoted_text)
-    character(len=*), intent(in)         :: text
-    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_text
-    character(len=2 * MAX_CACHE_KEY_LEN) :: escaped_text
-    integer(i32)                         :: src_index
-    integer(i32)                         :: dest_index
-
-    quoted_text = ""
-    if (trim(text) == "-") then
-      quoted_text = "-"
-    else
-      escaped_text = ""
-      dest_index = 0_i32
-      do src_index = 1_i32, len_trim(text)
-        dest_index = dest_index + 1_i32
-        escaped_text(dest_index:dest_index) = text(src_index:src_index)
-        if (text(src_index:src_index) == '"') then
-          dest_index = dest_index + 1_i32
-          escaped_text(dest_index:dest_index) = '"'
-        end if
-      end do
-      quoted_text = '"' // escaped_text(:dest_index) // '"'
-    end if
-  end function quote_persisted_text
 
   pure integer(i32) function sanitize_invalidation_reason(reason_code) result(resolved_reason)
     integer(i32), intent(in) :: reason_code

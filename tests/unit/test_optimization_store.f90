@@ -158,6 +158,20 @@ program test_optimization_store
   call expect_equal_i64("reloaded spaced-key fixture winner", winner_plan_id, 602_i64)
   call expect_equal_string("reloaded spaced-key fixture winner key", winner_candidate_key_text, &
     'candidate "ane" planner 1')
+
+  call initialize_runtime_optimization_store(store)
+  call record_execution_sample(store, "prefill:key:dash", 701_i64, 4_i64, "-")
+  call save_runtime_optimization_store(store, store_path, saved_ok)
+  call expect_true("dash-valued optimization store save should succeed", saved_ok)
+  call initialize_runtime_optimization_store(reloaded_store)
+  call load_runtime_optimization_store(reloaded_store, store_path, loaded_ok)
+  call expect_true("dash-valued optimization store load should succeed", loaded_ok)
+  call lookup_winner_candidate(reloaded_store, "prefill:key:dash", winner_plan_id, &
+    winner_candidate_key_text, has_winner)
+  call expect_true("dash-valued optimization fixture should preserve winner", has_winner)
+  call expect_equal_i64("dash-valued optimization winner", winner_plan_id, 701_i64)
+  call expect_equal_string("dash-valued optimization candidate key should round-trip", &
+    winner_candidate_key_text, "-")
   call execute_command_line("rm -f " // store_path)
 
   call reset_runtime_optimization_store(store)

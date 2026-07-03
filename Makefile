@@ -256,6 +256,7 @@ $(TEST_DIR)/test_optimization_store: $(TEST_DIR)
 		src/common/mod_types.f90 \
 		src/model/mod_model_manifest.f90 \
 		src/cache/mod_cache_keys.f90 \
+		src/cache/mod_cache_store.f90 \
 		src/runtime/mod_optimization_store.f90 \
 		tests/unit/test_optimization_store.f90
 

@@ -138,6 +138,34 @@ program test_cache_store
   call expect_equal_string("multimodal metadata fingerprint", trim(reloaded_metadata%payload_fingerprint), &
     '3333 "CCCC"')
 
+  call initialize_runtime_cache_bundle(bundle)
+  call touch_weight_cache_key(bundle, "-", was_hit)
+  call expect_false("literal dash weight key should start cold", was_hit)
+  weight_metadata = artifact_metadata_record()
+  weight_metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
+  weight_metadata%execution_route = MIZU_EXEC_ROUTE_ANE
+  weight_metadata%stage_kind = MIZU_STAGE_MODEL_LOAD
+  weight_metadata%artifact_format = "-"
+  weight_metadata%payload_fingerprint = "-"
+  weight_metadata%payload_path = "-"
+  call record_weight_artifact_metadata(bundle, "-", weight_metadata)
+  call execute_command_line("rm -f " // store_path)
+  call save_runtime_cache_bundle(bundle, store_path, saved_ok)
+  call expect_true("dash-valued artifact cache save should succeed", saved_ok)
+  call initialize_runtime_cache_bundle(reloaded_bundle)
+  call load_runtime_cache_bundle(reloaded_bundle, store_path, loaded_ok)
+  call expect_true("dash-valued artifact cache load should succeed", loaded_ok)
+  call touch_weight_cache_key(reloaded_bundle, "-", was_hit)
+  call expect_true("literal dash weight key should round-trip", was_hit)
+  call lookup_weight_artifact_metadata(reloaded_bundle, "-", reloaded_metadata, found)
+  call expect_true("dash-valued weight metadata should exist", found)
+  call expect_equal_string("dash-valued weight format should round-trip", &
+    trim(reloaded_metadata%artifact_format), "-")
+  call expect_equal_string("dash-valued weight fingerprint should round-trip", &
+    trim(reloaded_metadata%payload_fingerprint), "-")
+  call expect_equal_string("dash-valued weight path should round-trip", &
+    trim(reloaded_metadata%payload_path), "-")
+
   call execute_command_line("rm -f " // store_path)
   write(*, "(A)") "test_cache_store: PASS"
 

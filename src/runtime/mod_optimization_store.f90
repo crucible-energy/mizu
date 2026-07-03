@@ -1,6 +1,7 @@
 module mod_optimization_store
   use mod_kinds,      only: i32, i64
   use mod_cache_keys, only: MAX_CACHE_KEY_LEN
+  use mod_cache_store, only: normalize_legacy_persisted_field, quote_persisted_text
 
   implicit none
 
@@ -19,7 +20,7 @@ module mod_optimization_store
 
   integer(i32), parameter :: INITIAL_ENTRY_CAPACITY = 16_i32
   integer(i32), parameter :: INITIAL_CANDIDATE_CAPACITY = 4_i32
-  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (2_i32 * MAX_CACHE_KEY_LEN) + 128_i32
+  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_CACHE_KEY_LEN) + 128_i32
 
   integer(i32), parameter :: OPT_EVIDENCE_VALID = 0_i32
   integer(i32), parameter :: OPT_INVALIDATION_WORKLOAD_CHANGED = 1_i32
@@ -305,7 +306,7 @@ contains
       end if
       if (trim(tag) /= "candidate") cycle
       if (len_trim(key_text) == 0 .or. plan_id == 0_i64 .or. sample_count <= 0_i64) cycle
-      if (trim(candidate_key_text) == "-") candidate_key_text = ""
+      call normalize_legacy_persisted_field(line, 6_i32, candidate_key_text)
 
       entry_index = ensure_entry_index(store, trim(key_text))
       candidate_index = ensure_candidate_index(store%entries(entry_index), plan_id, candidate_key_text)
@@ -322,7 +323,8 @@ contains
     type(runtime_optimization_store), intent(in) :: store
     character(len=*), intent(in)                 :: file_path
     logical, intent(out)                         :: saved_ok
-    character(len=MAX_CACHE_KEY_LEN)             :: persisted_candidate_key
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_key_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2)   :: quoted_candidate_key
     integer(i32)                                 :: unit_id
     integer(i32)                                 :: ios
     integer(i32)                                 :: entry_index
@@ -339,14 +341,17 @@ contains
         if (store%entries(entry_index)%candidates(candidate_index)%plan_id == 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%sample_count <= 0_i64) cycle
         if (store%entries(entry_index)%candidates(candidate_index)%is_invalid) cycle
-        persisted_candidate_key = trim(store%entries(entry_index)%candidates(candidate_index)%candidate_key_text)
-        if (len_trim(persisted_candidate_key) == 0) persisted_candidate_key = "-"
+        quoted_key_text = &
+          quote_persisted_text(store%entries(entry_index)%key_text, MAX_CACHE_KEY_LEN)
+        quoted_candidate_key = quote_persisted_text( &
+          store%entries(entry_index)%candidates(candidate_index)%candidate_key_text, &
+          MAX_CACHE_KEY_LEN)
         write(unit_id, "(A,1X,A,1X,I0,1X,I0,1X,I0,1X,A)", iostat=ios) &
-          "candidate", trim(store%entries(entry_index)%key_text), &
+          "candidate", trim(quoted_key_text), &
           store%entries(entry_index)%candidates(candidate_index)%plan_id, &
           store%entries(entry_index)%candidates(candidate_index)%sample_count, &
           store%entries(entry_index)%candidates(candidate_index)%cumulative_elapsed_us, &
-          trim(persisted_candidate_key)
+          trim(quoted_candidate_key)
         if (ios /= 0) then
           close(unit_id)
           return

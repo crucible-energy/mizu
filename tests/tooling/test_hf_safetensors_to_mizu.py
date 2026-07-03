@@ -33,16 +33,16 @@ def main() -> int:
         write_safetensors(
             source_root / "model-00001-of-00002.safetensors",
             {
-                "model.embed_tokens.weight": ("BF16", [152064, 3584]),
-                "model.layers.0.self_attn.q_proj.weight": ("BF16", [3584, 3584]),
+                "model.embed_tokens.weight": ("BF16", [64, 32]),
+                "model.layers.0.self_attn.q_proj.weight": ("BF16", [32, 32]),
             },
         )
         write_safetensors(
             source_root / "model-00002-of-00002.safetensors",
             {
-                "model.norm.weight": ("F32", [3584]),
-                "lm_head.weight": ("BF16", [3584, 152064]),
-                "visual.merger.mlp.0.weight": ("F16", [1280, 3584]),
+                "model.norm.weight": ("F32", [32]),
+                "lm_head.weight": ("BF16", [32, 64]),
+                "visual.merger.mlp.0.weight": ("F16", [16, 32]),
             },
         )
         write_json(
@@ -88,7 +88,7 @@ def main() -> int:
         expect_contains(tensor_inventory, "model.embed_tokens.weight|embedding_table|bf16|row_major")
         expect_contains(
             tensor_inventory,
-            "model.layers.0.self_attn.q_proj.weight|decoder_stack|bf16|packed|weights/model-00001-of-00002.safetensors|3584x3584|bf16",
+            "model.layers.0.self_attn.q_proj.weight|decoder_stack|bf16|packed|weights/model-00001-of-00002.safetensors|32x32|bf16",
         )
         expect_contains(tensor_inventory, "lm_head.weight|token_projection|bf16|row_major")
         expect_contains(tensor_inventory, "visual.merger.mlp.0.weight|multimodal_projector|f16|packed")
@@ -108,9 +108,9 @@ def main() -> int:
         write_safetensors(
             gemma_root / "model.safetensors",
             {
-                "embed_tokens.weight": ("BF16", [256000, 4608]),
-                "decoder.layers.0.mlp.up_proj.weight": ("BF16", [4608, 18432]),
-                "mm_projector.weight": ("F16", [1152, 4608]),
+                "embed_tokens.weight": ("BF16", [128, 64]),
+                "decoder.layers.0.mlp.up_proj.weight": ("BF16", [64, 256]),
+                "mm_projector.weight": ("F16", [16, 64]),
             },
         )
         completed = subprocess.run(
@@ -135,6 +135,36 @@ def main() -> int:
         expect_file_contains(gemma_root / "manifest.mizu", "family = gemma4")
         expect_file_contains(gemma_root / "mizu_import" / "tensors.tsv", "mm_projector.weight|multimodal_projector")
 
+        broken_root = Path(temp_root) / "Broken-Qwen"
+        broken_root.mkdir(parents=True)
+        write_json(
+            broken_root / "config.json",
+            {
+                "_name_or_path": "Broken/Qwen",
+                "model_type": "qwen3_5_vl",
+            },
+        )
+        write_invalid_safetensors(broken_root / "model.safetensors")
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(broken_root),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "safetensors importer should reject tensors whose data range is shorter than dtype/shape",
+            completed,
+            "expected 512 bytes from dtype/shape",
+        )
+
     print("test_hf_safetensors_to_mizu: PASS")
     return 0
 
@@ -148,19 +178,33 @@ def write_safetensors(path: Path, tensors: dict[str, tuple[str, list[int]]]) -> 
     data_offset = 0
     for name, (dtype, shape) in tensors.items():
         byte_count = max(1, product(shape) * dtype_size(dtype))
-        stored_count = min(byte_count, 32)
         header[name] = {
             "dtype": dtype,
             "shape": shape,
-            "data_offsets": [data_offset, data_offset + stored_count],
+            "data_offsets": [data_offset, data_offset + byte_count],
         }
-        data_offset += stored_count
+        data_offset += byte_count
 
     header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
     with path.open("wb") as handle:
         handle.write(struct.pack("<Q", len(header_bytes)))
         handle.write(header_bytes)
         handle.write(b"\0" * data_offset)
+
+
+def write_invalid_safetensors(path: Path) -> None:
+    header = {
+        "model.embed_tokens.weight": {
+            "dtype": "BF16",
+            "shape": [16, 16],
+            "data_offsets": [0, 64],
+        }
+    }
+    header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    with path.open("wb") as handle:
+        handle.write(struct.pack("<Q", len(header_bytes)))
+        handle.write(header_bytes)
+        handle.write(b"\0" * 64)
 
 
 def dtype_size(dtype: str) -> int:
@@ -187,6 +231,13 @@ def expect_contains(haystack: str, needle: str) -> None:
 def expect_path_exists(path: Path) -> None:
     if not path.exists():
         raise AssertionError(f"missing expected path: {path}")
+
+
+def expect_failed_run(label: str, completed: subprocess.CompletedProcess[str], stderr_needle: str) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: command unexpectedly succeeded")
+    if stderr_needle not in completed.stderr:
+        raise AssertionError(f"{label}: missing stderr text {stderr_needle!r}\n{completed.stderr}")
 
 
 if __name__ == "__main__":

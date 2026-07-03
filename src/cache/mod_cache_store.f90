@@ -17,10 +17,11 @@ module mod_cache_store
   public :: lookup_weight_artifact_metadata, lookup_plan_artifact_metadata
   public :: lookup_session_artifact_metadata, lookup_multimodal_artifact_metadata
   public :: load_runtime_cache_bundle, save_runtime_cache_bundle
+  public :: quote_persisted_text, normalize_legacy_persisted_field
 
   integer(i32), parameter :: INITIAL_CACHE_CAPACITY = 16_i32
-  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (2_i32 * MAX_PATH_LEN) + &
-    (2_i32 * MAX_CACHE_KEY_LEN) + MAX_NAME_LEN + 128_i32
+  integer(i32), parameter :: MAX_RECORD_LINE_LEN = (4_i32 * MAX_PATH_LEN) + &
+    (4_i32 * MAX_CACHE_KEY_LEN) + (4_i32 * MAX_NAME_LEN) + 256_i32
 
   type :: artifact_metadata_record
     integer(i32)                :: backend_family   = MIZU_BACKEND_FAMILY_NONE
@@ -254,10 +255,9 @@ contains
         metadata%execution_route = execution_route
         metadata%stage_kind = stage_kind
         metadata%is_materialized = (materialized_flag /= 0_i32)
-        call normalize_persisted_text(metadata%artifact_format)
-        call normalize_persisted_text(metadata%payload_fingerprint)
-        call normalize_persisted_text(metadata%payload_path)
-
+        call normalize_legacy_persisted_field(line, 10_i32, metadata%artifact_format)
+        call normalize_legacy_persisted_field(line, 11_i32, metadata%payload_fingerprint)
+        call normalize_legacy_persisted_field(line, 12_i32, metadata%payload_path)
         select case (trim(kind_tag))
         case ("weight")
           call record_cache_key_metadata(bundle%weight_store, trim(key_text), metadata)
@@ -402,10 +402,12 @@ contains
     type(cache_key_store), intent(in) :: store
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: index
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
 
     do index = 1_i32, store%entry_count
       if (len_trim(store%entries(index)) == 0) cycle
-      write(unit_id, "(A,1X,A)", iostat=ios) trim(tag), trim(store%entries(index))
+      quoted_key_text = quote_persisted_text(store%entries(index), MAX_CACHE_KEY_LEN)
+      write(unit_id, "(A,1X,A)", iostat=ios) trim(tag), trim(quoted_key_text)
       if (ios /= 0_i32) return
     end do
   end subroutine write_cache_key_store
@@ -417,26 +419,34 @@ contains
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: index
     integer(i32)                      :: materialized_flag
+    character(len=MAX_CACHE_KEY_LEN)  :: key_text
     character(len=MAX_NAME_LEN)       :: artifact_format
     character(len=MAX_NAME_LEN)       :: payload_fingerprint
     character(len=MAX_PATH_LEN)       :: payload_path
-    character(len=MAX_PATH_LEN + 2)   :: quoted_payload_path
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_artifact_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_payload_fingerprint
+    character(len=(2 * MAX_PATH_LEN) + 2)   :: quoted_payload_path
 
     do index = 1_i32, store%entry_count
       if (.not. artifact_metadata_is_defined(store%metadata(index))) cycle
 
       materialized_flag = merge(1_i32, 0_i32, store%metadata(index)%is_materialized)
-      artifact_format = persisted_text_or_dash(store%metadata(index)%artifact_format, MAX_NAME_LEN)
-      payload_fingerprint = persisted_text_or_dash(store%metadata(index)%payload_fingerprint, MAX_NAME_LEN)
-      payload_path = persisted_text_or_dash(store%metadata(index)%payload_path, MAX_PATH_LEN)
-      quoted_payload_path = quote_persisted_path(payload_path)
+      key_text = store%entries(index)
+      artifact_format = store%metadata(index)%artifact_format
+      payload_fingerprint = store%metadata(index)%payload_fingerprint
+      payload_path = store%metadata(index)%payload_path
+      quoted_key_text = quote_persisted_text(key_text, MAX_CACHE_KEY_LEN)
+      quoted_artifact_format = quote_persisted_text(artifact_format, MAX_NAME_LEN)
+      quoted_payload_fingerprint = quote_persisted_text(payload_fingerprint, MAX_NAME_LEN)
+      quoted_payload_path = quote_persisted_text(payload_path, MAX_PATH_LEN)
 
       write(unit_id, "(A,1X,A,1X,A,1X,I0,1X,I0,1X,I0,1X,I0,1X,I0,1X,I0,1X,A,1X,A,1X,A)", iostat=ios) &
-        "meta", trim(tag), trim(store%entries(index)), store%metadata(index)%backend_family, &
+        "meta", trim(tag), trim(quoted_key_text), store%metadata(index)%backend_family, &
         store%metadata(index)%execution_route, store%metadata(index)%stage_kind, &
         materialized_flag, max(0_i64, store%metadata(index)%payload_bytes), &
-        max(0_i64, store%metadata(index)%workspace_bytes), trim(artifact_format), &
-        trim(payload_fingerprint), trim(quoted_payload_path)
+        max(0_i64, store%metadata(index)%workspace_bytes), trim(quoted_artifact_format), &
+        trim(quoted_payload_fingerprint), trim(quoted_payload_path)
       if (ios /= 0_i32) return
     end do
   end subroutine write_artifact_metadata_store
@@ -473,35 +483,104 @@ contains
     call move_alloc(resized_metadata, store%metadata)
   end subroutine ensure_cache_key_store_capacity
 
-  function persisted_text_or_dash(text, buffer_len) result(persisted_text)
+  function quote_persisted_text(text, buffer_len) result(quoted_text)
     character(len=*), intent(in) :: text
     integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len)    :: persisted_text
+    character(len=(2 * buffer_len) + 2) :: quoted_text
+    character(len=2 * buffer_len) :: escaped_text
+    integer(i32)                  :: src_index
+    integer(i32)                  :: dest_index
 
-    persisted_text = ""
-    if (len_trim(text) > 0) then
-      persisted_text = trim(text)
-    else
-      persisted_text = "-"
+    quoted_text = '""'
+    escaped_text = ""
+    dest_index = 0_i32
+    do src_index = 1_i32, len_trim(text)
+      dest_index = dest_index + 1_i32
+      escaped_text(dest_index:dest_index) = text(src_index:src_index)
+      if (text(src_index:src_index) == '"') then
+        dest_index = dest_index + 1_i32
+        escaped_text(dest_index:dest_index) = '"'
+      end if
+    end do
+    if (dest_index > 0_i32) then
+      quoted_text = '"' // escaped_text(:dest_index) // '"'
     end if
-  end function persisted_text_or_dash
+  end function quote_persisted_text
 
-  subroutine normalize_persisted_text(text)
+  subroutine normalize_legacy_persisted_field(line, field_index, text)
+    character(len=*), intent(in)    :: line
+    integer(i32), intent(in)        :: field_index
     character(len=*), intent(inout) :: text
 
-    if (trim(text) == "-") text = ""
-  end subroutine normalize_persisted_text
+    if (legacy_persisted_field_is_empty(line, field_index)) text = ""
+  end subroutine normalize_legacy_persisted_field
 
-  function quote_persisted_path(path_text) result(quoted_text)
-    character(len=*), intent(in)  :: path_text
-    character(len=MAX_PATH_LEN + 2) :: quoted_text
+  pure logical function legacy_persisted_field_is_empty(line, field_index) result(is_empty)
+    character(len=*), intent(in) :: line
+    integer(i32), intent(in)     :: field_index
+    integer(i32)                 :: line_len
+    integer(i32)                 :: index
+    integer(i32)                 :: current_field
+    integer(i32)                 :: token_len
+    logical                      :: quoted_token
+    logical                      :: is_dash_token
+    character(len=1)             :: ch
 
-    quoted_text = ""
-    if (trim(path_text) == "-") then
-      quoted_text = "-"
-    else
-      quoted_text = '"' // trim(path_text) // '"'
-    end if
-  end function quote_persisted_path
+    is_empty = .false.
+    if (field_index <= 0_i32) return
+
+    line_len = len_trim(line)
+    index = 1_i32
+    current_field = 0_i32
+    do while (index <= line_len)
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (ch /= " " .and. ch /= achar(9)) exit
+        index = index + 1_i32
+      end do
+      if (index > line_len) exit
+
+      current_field = current_field + 1_i32
+      quoted_token = (line(index:index) == '"')
+      token_len = 0_i32
+      is_dash_token = .true.
+      if (quoted_token) index = index + 1_i32
+
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (quoted_token) then
+          if (ch == '"') then
+            if (index < line_len .and. line(index + 1_i32:index + 1_i32) == '"') then
+              token_len = token_len + 1_i32
+              is_dash_token = .false.
+              index = index + 2_i32
+              cycle
+            end if
+            index = index + 1_i32
+            exit
+          end if
+        else if (ch == " " .or. ch == achar(9)) then
+          exit
+        end if
+
+        token_len = token_len + 1_i32
+        if (token_len > 1_i32 .or. ch /= "-") is_dash_token = .false.
+        index = index + 1_i32
+      end do
+
+      do while (index <= line_len)
+        ch = line(index:index)
+        if (ch == " " .or. ch == achar(9)) exit
+        token_len = token_len + 1_i32
+        is_dash_token = .false.
+        index = index + 1_i32
+      end do
+
+      if (current_field == field_index) then
+        is_empty = (.not. quoted_token .and. token_len == 1_i32 .and. is_dash_token)
+        return
+      end if
+    end do
+  end function legacy_persisted_field_is_empty
 
 end module mod_cache_store

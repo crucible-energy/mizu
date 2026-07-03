@@ -4,7 +4,8 @@ module mod_plan_cache
   use mod_types,       only: MIZU_BACKEND_FAMILY_NONE, MIZU_DTYPE_UNKNOWN, &
                              MIZU_EXEC_ROUTE_NONE, MIZU_STAGE_NONE
   use mod_cache_keys,  only: MAX_CACHE_KEY_LEN, plan_cache_key
-  use mod_cache_store, only: artifact_metadata_record
+  use mod_cache_store, only: artifact_metadata_record, normalize_legacy_persisted_field, &
+                             quote_persisted_text
 
   implicit none
 
@@ -17,7 +18,7 @@ module mod_plan_cache
 
   integer(i32), parameter :: INITIAL_PLAN_CACHE_CAPACITY = 16_i32
   integer(i32), parameter :: MAX_PLAN_CACHE_RECORD_LINE_LEN = &
-    (3_i32 * MAX_CACHE_KEY_LEN) + (3_i32 * MAX_NAME_LEN) + MAX_PATH_LEN + 512_i32
+    (4_i32 * MAX_CACHE_KEY_LEN) + (8_i32 * MAX_NAME_LEN) + (2_i32 * MAX_PATH_LEN) + 512_i32
 
   type :: plan_cache_record
     type(plan_cache_key)             :: key
@@ -242,10 +243,10 @@ contains
       if (trim(tag) /= "entry") cycle
 
       metadata%is_materialized = (materialized_flag /= 0_i32)
-      call normalize_persisted_text(candidate_key_text)
-      call normalize_persisted_text(metadata%artifact_format)
-      call normalize_persisted_text(metadata%payload_fingerprint)
-      call normalize_persisted_text(metadata%payload_path)
+      call normalize_legacy_persisted_field(line, 5_i32, candidate_key_text)
+      call normalize_legacy_persisted_field(line, 35_i32, metadata%artifact_format)
+      call normalize_legacy_persisted_field(line, 36_i32, metadata%payload_fingerprint)
+      call normalize_legacy_persisted_field(line, 37_i32, metadata%payload_path)
       call remember_loaded_plan_record(cache, key, plan_id, max(0_i64, hit_count), &
         candidate_key_text, metadata, loaded_count)
     end do
@@ -281,35 +282,53 @@ contains
     type(plan_cache_record), intent(in) :: record
     integer(i32), intent(inout)       :: ios
     integer(i32)                      :: materialized_flag
+    character(len=MAX_CACHE_KEY_LEN)  :: key_text
     character(len=MAX_CACHE_KEY_LEN)  :: candidate_key_text
+    character(len=MAX_NAME_LEN)       :: device_key
+    character(len=MAX_NAME_LEN)       :: pack_format
     character(len=MAX_NAME_LEN)       :: artifact_format
     character(len=MAX_NAME_LEN)       :: payload_fingerprint
     character(len=MAX_PATH_LEN)       :: payload_path
-    character(len=MAX_PATH_LEN + 2)   :: quoted_payload_path
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
+    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_candidate_key_text
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_device_key
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_pack_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_artifact_format
+    character(len=(2 * MAX_NAME_LEN) + 2)   :: quoted_payload_fingerprint
+    character(len=(2 * MAX_PATH_LEN) + 2)   :: quoted_payload_path
 
     if (.not. plan_cache_key_is_strict(record%key)) return
     if (record%plan_id == 0_i64) return
     if (.not. metadata_matches_key(record%artifact_metadata, record%key)) return
 
-    candidate_key_text = persisted_text_or_dash(record%candidate_key_text, MAX_CACHE_KEY_LEN)
+    key_text = record%key%key_text
+    candidate_key_text = record%candidate_key_text
+    device_key = record%key%device_key
+    pack_format = record%key%pack_format
     materialized_flag = merge(1_i32, 0_i32, record%artifact_metadata%is_materialized)
-    artifact_format = persisted_text_or_dash(record%artifact_metadata%artifact_format, MAX_NAME_LEN)
-    payload_fingerprint = persisted_text_or_dash(record%artifact_metadata%payload_fingerprint, MAX_NAME_LEN)
-    payload_path = persisted_text_or_dash(record%artifact_metadata%payload_path, MAX_PATH_LEN)
-    quoted_payload_path = quote_persisted_path(payload_path)
+    artifact_format = record%artifact_metadata%artifact_format
+    payload_fingerprint = record%artifact_metadata%payload_fingerprint
+    payload_path = record%artifact_metadata%payload_path
+    quoted_key_text = quote_persisted_text(key_text, MAX_CACHE_KEY_LEN)
+    quoted_candidate_key_text = quote_persisted_text(candidate_key_text, MAX_CACHE_KEY_LEN)
+    quoted_device_key = quote_persisted_text(device_key, MAX_NAME_LEN)
+    quoted_pack_format = quote_persisted_text(pack_format, MAX_NAME_LEN)
+    quoted_artifact_format = quote_persisted_text(artifact_format, MAX_NAME_LEN)
+    quoted_payload_fingerprint = quote_persisted_text(payload_fingerprint, MAX_NAME_LEN)
+    quoted_payload_path = quote_persisted_text(payload_path, MAX_PATH_LEN)
 
     write(unit_id, "(A,1X,A,1X,I0,1X,I0,1X,A,5(1X,I0),2(1X,I0),6(1X,I0),8(1X,I0),2(1X,A),4(1X,I0),2(1X,I0),3(1X,A))", &
         iostat=ios) &
-      "entry", trim(record%key%key_text), record%plan_id, max(0_i64, record%hit_count), &
-      trim(candidate_key_text), record%key%versions%schema_version, record%key%versions%abi_version, &
+      "entry", trim(quoted_key_text), record%plan_id, max(0_i64, record%hit_count), &
+      trim(quoted_candidate_key_text), record%key%versions%schema_version, record%key%versions%abi_version, &
       record%key%versions%planner_version, record%key%versions%pack_version, &
       record%key%versions%backend_version, record%key%logical_model_hash, record%key%projector_revision, &
       record%key%model_family, record%key%stage_kind, record%key%backend_family, record%key%execution_route, &
-      record%key%dtype, record%key%rank, record%key%shape, trim(record%key%device_key), &
-      trim(record%key%pack_format), record%artifact_metadata%backend_family, &
+      record%key%dtype, record%key%rank, record%key%shape, trim(quoted_device_key), &
+      trim(quoted_pack_format), record%artifact_metadata%backend_family, &
       record%artifact_metadata%execution_route, record%artifact_metadata%stage_kind, materialized_flag, &
       max(0_i64, record%artifact_metadata%payload_bytes), max(0_i64, record%artifact_metadata%workspace_bytes), &
-      trim(artifact_format), trim(payload_fingerprint), trim(quoted_payload_path)
+      trim(quoted_artifact_format), trim(quoted_payload_fingerprint), trim(quoted_payload_path)
   end subroutine write_plan_cache_record
 
   integer(i32) function ensure_entry_index(cache, key_text) result(entry_index)
@@ -378,36 +397,5 @@ contains
 
     write(text, "(I0)") value
   end function i64_to_text
-
-  function persisted_text_or_dash(text, buffer_len) result(persisted_text)
-    character(len=*), intent(in) :: text
-    integer(i32), intent(in)     :: buffer_len
-    character(len=buffer_len)    :: persisted_text
-
-    persisted_text = ""
-    if (len_trim(text) > 0) then
-      persisted_text = trim(text)
-    else
-      persisted_text = "-"
-    end if
-  end function persisted_text_or_dash
-
-  subroutine normalize_persisted_text(text)
-    character(len=*), intent(inout) :: text
-
-    if (trim(text) == "-") text = ""
-  end subroutine normalize_persisted_text
-
-  function quote_persisted_path(path_text) result(quoted_text)
-    character(len=*), intent(in)    :: path_text
-    character(len=MAX_PATH_LEN + 2) :: quoted_text
-
-    quoted_text = ""
-    if (trim(path_text) == "-") then
-      quoted_text = "-"
-    else
-      quoted_text = '"' // trim(path_text) // '"'
-    end if
-  end function quote_persisted_path
 
 end module mod_plan_cache

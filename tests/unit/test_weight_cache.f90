@@ -40,11 +40,11 @@ program test_weight_cache
   versions%pack_version = 3_i32
   versions%backend_version = 11_i32
 
-  call build_weight_cache_key(manifest, "cuda-sm80", "cuda-pack-v1", &
+  call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v1', &
     MIZU_BACKEND_FAMILY_CUDA, MIZU_EXEC_ROUTE_CUDA, cuda_key, versions)
-  call build_weight_cache_key(manifest, "cuda-sm80", "cuda-pack-v1", &
+  call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v1', &
     MIZU_BACKEND_FAMILY_APPLE, MIZU_EXEC_ROUTE_ANE, route_changed_key, versions)
-  call build_weight_cache_key(manifest, "cuda-sm80", "cuda-pack-v2", &
+  call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v2', &
     MIZU_BACKEND_FAMILY_CUDA, MIZU_EXEC_ROUTE_CUDA, pack_changed_key, versions)
 
   metadata%stage_kind = MIZU_STAGE_MODEL_LOAD
@@ -53,9 +53,9 @@ program test_weight_cache
   metadata%is_materialized = .true.
   metadata%payload_bytes = 1048576_i64
   metadata%workspace_bytes = 2097152_i64
-  metadata%artifact_format = "cuda-pack-v1"
-  metadata%payload_fingerprint = "PACKA"
-  metadata%payload_path = "cache/weights/PACKA.pack"
+  metadata%artifact_format = 'cuda "pack" v1'
+  metadata%payload_fingerprint = 'PACK "A"'
+  metadata%payload_path = 'cache/weights/PACK "A".pack'
 
   call initialize_runtime_weight_cache(cache)
   call expect_true("generated weight key should be strict", weight_cache_key_is_strict(cuda_key))
@@ -70,7 +70,8 @@ program test_weight_cache
   call lookup_weight_cache_entry(cache, cuda_key, record, found)
   call expect_true("matching strict weight key should hit", found)
   call expect_equal_i64("weight cache should increment hit count", record%hit_count, 1_i64)
-  call expect_equal_string("weight cache should derive pack identity", record%pack_identity_text, "PACKA")
+  call expect_equal_string("weight cache should derive pack identity", &
+    record%pack_identity_text, 'PACK "A"')
   call expect_equal_i64("weight cache should preserve payload bytes", &
     record%artifact_metadata%payload_bytes, 1048576_i64)
 
@@ -91,15 +92,18 @@ program test_weight_cache
   call expect_equal_i32("malformed weight key should be rejected", status_code, MIZU_STATUS_INVALID_ARGUMENT)
 
   metadata%execution_route = MIZU_EXEC_ROUTE_CUDA
-  metadata%payload_fingerprint = "PACKB"
-  metadata%payload_path = "cache/weights/PACKB.pack"
-  call record_weight_cache_entry(cache, cuda_key, metadata, status_code, pack_identity_text="PACKB")
-  call expect_equal_i32("same strict weight key should update existing entry", status_code, MIZU_STATUS_OK)
-  call expect_equal_i32("same strict weight key update should preserve entry count", cache%entry_count, 1_i32)
+  metadata%payload_fingerprint = 'PACK "B"'
+  metadata%payload_path = 'cache/weights/PACK "B".pack'
+  call record_weight_cache_entry(cache, cuda_key, metadata, status_code, &
+    pack_identity_text='PACK "B"')
+  call expect_equal_i32("same strict weight key should update existing entry", &
+    status_code, MIZU_STATUS_OK)
+  call expect_equal_i32("same strict weight key update should preserve entry count", &
+    cache%entry_count, 1_i32)
   call lookup_weight_cache_entry(cache, cuda_key, record, found)
   call expect_true("updated strict weight key should still hit", found)
   call expect_equal_string("updated strict weight key should replace pack identity", &
-    record%pack_identity_text, "PACKB")
+    record%pack_identity_text, 'PACK "B"')
   call expect_equal_i64("updated strict weight key should preserve hit history", record%hit_count, 2_i64)
 
   call execute_command_line("rm -f " // cache_path)
@@ -113,17 +117,19 @@ program test_weight_cache
   call lookup_weight_cache_entry(reloaded_cache, cuda_key, record, found)
   call expect_true("reloaded weight cache should hit strict key", found)
   call expect_equal_string("reloaded weight cache should restore pack identity", &
-    record%pack_identity_text, "PACKB")
+    record%pack_identity_text, 'PACK "B"')
   call expect_equal_i64("reloaded lookup should advance persisted hit count", record%hit_count, 3_i64)
+  call expect_equal_string("reloaded weight cache should restore payload path", &
+    record%artifact_metadata%payload_path, 'cache/weights/PACK "B".pack')
 
   metadata%backend_family = MIZU_BACKEND_FAMILY_APPLE
   metadata%execution_route = MIZU_EXEC_ROUTE_ANE
-  metadata%artifact_format = "cuda-pack-v1"
-  metadata%payload_fingerprint = "PACKC"
-  metadata%payload_path = "cache/weights/PACKC.pack"
+  metadata%artifact_format = 'cuda "pack" v1'
+  metadata%payload_fingerprint = 'PACK "C"'
+  metadata%payload_path = 'cache/weights/PACK "C".pack'
   call initialize_runtime_weight_cache(warmed_cache)
   call record_weight_cache_entry(warmed_cache, route_changed_key, metadata, status_code, &
-    pack_identity_text="PACKC")
+    pack_identity_text='PACK "C"')
   call expect_equal_i32("warm target seed weight entry should record", status_code, MIZU_STATUS_OK)
   call warm_runtime_weight_cache(warmed_cache, cache_path, warmed_count, loaded_ok)
   call expect_true("weight cache warm should load persisted entries", loaded_ok)
@@ -131,11 +137,53 @@ program test_weight_cache
   call expect_equal_i32("weight cache warm should merge instead of replacing", warmed_cache%entry_count, 2_i32)
   call lookup_weight_cache_entry(warmed_cache, cuda_key, record, found)
   call expect_true("warmed weight cache should hit loaded strict key", found)
-  call expect_equal_string("warmed weight cache should restore pack identity", record%pack_identity_text, "PACKB")
+  call expect_equal_string("warmed weight cache should restore pack identity", &
+    record%pack_identity_text, 'PACK "B"')
   call lookup_weight_cache_entry(warmed_cache, route_changed_key, record, found)
   call expect_true("warmed weight cache should keep existing entries", found)
   call expect_equal_string("warmed weight cache should keep existing pack identity", &
-    record%pack_identity_text, "PACKC")
+    record%pack_identity_text, 'PACK "C"')
+
+  metadata%backend_family = MIZU_BACKEND_FAMILY_CUDA
+  metadata%execution_route = MIZU_EXEC_ROUTE_CUDA
+  metadata%artifact_format = 'cuda "pack" v1'
+  metadata%payload_fingerprint = "-"
+  metadata%payload_path = "-"
+  call initialize_runtime_weight_cache(cache)
+  call record_weight_cache_entry(cache, cuda_key, metadata, status_code, pack_identity_text="-")
+  call expect_equal_i32("literal dash weight entry should record", status_code, MIZU_STATUS_OK)
+  call execute_command_line("rm -f " // cache_path)
+  call save_runtime_weight_cache(cache, cache_path, saved_ok)
+  call expect_true("dash-valued weight cache save should succeed", saved_ok)
+  call initialize_runtime_weight_cache(reloaded_cache)
+  call load_runtime_weight_cache(reloaded_cache, cache_path, loaded_ok)
+  call expect_true("dash-valued weight cache load should succeed", loaded_ok)
+  call lookup_weight_cache_entry(reloaded_cache, cuda_key, record, found)
+  call expect_true("dash-valued weight cache should hit strict key", found)
+  call expect_equal_string("dash-valued weight pack identity should round-trip", &
+    record%pack_identity_text, "-")
+  call expect_equal_string("dash-valued weight format should stay aligned to key", &
+    record%artifact_metadata%artifact_format, 'cuda "pack" v1')
+  call expect_equal_string("dash-valued weight fingerprint should round-trip", &
+    record%artifact_metadata%payload_fingerprint, "-")
+  call expect_equal_string("dash-valued weight path should round-trip", &
+    record%artifact_metadata%payload_path, "-")
+  call execute_command_line("rm -f " // cache_path)
+
+  call write_legacy_weight_cache_entry(cache_path, cuda_key)
+  call initialize_runtime_weight_cache(reloaded_cache)
+  call load_runtime_weight_cache(reloaded_cache, cache_path, loaded_ok)
+  call expect_true("legacy weight cache load should succeed", loaded_ok)
+  call lookup_weight_cache_entry(reloaded_cache, cuda_key, record, found)
+  call expect_true("legacy weight cache should preserve strict key", found)
+  call expect_equal_string("legacy weight cache should preserve derived pack identity", &
+    record%pack_identity_text, 'PACK LEGACY')
+  call expect_equal_string("legacy weight cache should restore empty artifact format", &
+    record%artifact_metadata%artifact_format, "")
+  call expect_equal_string("legacy weight cache should restore empty fingerprint", &
+    record%artifact_metadata%payload_fingerprint, "")
+  call expect_equal_string("legacy weight cache should restore empty path", &
+    record%artifact_metadata%payload_path, "")
   call execute_command_line("rm -f " // cache_path)
 
   call reset_runtime_weight_cache(cache)
@@ -198,5 +246,44 @@ contains
       error stop 1
     end if
   end subroutine expect_false
+
+  subroutine write_legacy_weight_cache_entry(file_path, key)
+    character(len=*), intent(in) :: file_path
+    type(weight_cache_key), intent(in) :: key
+    integer(i32) :: unit_id
+    integer(i32) :: ios
+
+    open(newunit=unit_id, file=trim(file_path), status="replace", action="write", iostat=ios)
+    call expect_equal_i32("legacy weight cache fixture should open", ios, 0_i32)
+    write(unit_id, "(A,1X,A,1X,I0,1X,A,5(1X,I0),2(1X,I0),3(1X,I0),2(1X,A),4(1X,I0),2(1X,I0),3(1X,A))", &
+        iostat=ios) &
+      "entry", trim(quote_field(key%key_text)), 9_i64, trim(quote_field('PACK LEGACY')), &
+      key%versions%schema_version, key%versions%abi_version, key%versions%planner_version, &
+      key%versions%pack_version, key%versions%backend_version, key%logical_model_hash, &
+      key%projector_revision, key%model_family, key%backend_family, key%execution_route, &
+      trim(quote_field(key%device_key)), trim(quote_field(key%pack_format)), key%backend_family, &
+      key%execution_route, MIZU_STAGE_MODEL_LOAD, 1_i32, 1048576_i64, 2097152_i64, "-", "-", "-"
+    call expect_equal_i32("legacy weight cache fixture should write", ios, 0_i32)
+    close(unit_id)
+  end subroutine write_legacy_weight_cache_entry
+
+  function quote_field(text) result(quoted_text)
+    character(len=*), intent(in) :: text
+    character(len=(2 * len(text)) + 2) :: quoted_text
+    integer(i32) :: src_index
+    integer(i32) :: dest_index
+
+    quoted_text = '""'
+    dest_index = 0_i32
+    do src_index = 1_i32, len_trim(text)
+      dest_index = dest_index + 1_i32
+      quoted_text(dest_index + 1_i32:dest_index + 1_i32) = text(src_index:src_index)
+      if (text(src_index:src_index) == '"') then
+        dest_index = dest_index + 1_i32
+        quoted_text(dest_index + 1_i32:dest_index + 1_i32) = '"'
+      end if
+    end do
+    if (dest_index > 0_i32) quoted_text = '"' // quoted_text(2:dest_index + 1_i32) // '"'
+  end function quote_field
 
 end program test_weight_cache

@@ -31,6 +31,14 @@ DTYPE_MAP = {
     "F32": "f32",
 }
 
+DTYPE_SIZES = {
+    "U8": 1,
+    "I32": 4,
+    "F16": 2,
+    "BF16": 2,
+    "F32": 4,
+}
+
 
 def main() -> int:
     args = parse_args()
@@ -151,6 +159,7 @@ def discover_safetensor_shards(model_root: Path) -> list[Path]:
 
 
 def read_safetensors_header(path: Path) -> dict[str, Any]:
+    file_size = path.stat().st_size
     with path.open("rb") as handle:
         header_len_bytes = handle.read(8)
         if len(header_len_bytes) != 8:
@@ -162,21 +171,49 @@ def read_safetensors_header(path: Path) -> dict[str, Any]:
         if len(header_bytes) != header_len:
             raise MizuImportError(f"truncated safetensors header in {path}")
     try:
-        return json.loads(header_bytes.decode("utf-8"))
+        header = json.loads(header_bytes.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise MizuImportError(f"invalid safetensors JSON header in {path}: {exc}") from exc
+    validate_safetensors_header(path, header, header_len, file_size)
+    return header
+
+
+def validate_safetensors_header(path: Path, header: Any, header_len: int, file_size: int) -> None:
+    if not isinstance(header, dict):
+        raise MizuImportError(f"expected safetensors header object in {path}")
+
+    payload_size = file_size - 8 - header_len
+    if payload_size < 0:
+        raise MizuImportError(f"safetensors payload starts beyond EOF in {path}")
+
+    for tensor_name, metadata in header.items():
+        if tensor_name == "__metadata__":
+            continue
+        if not isinstance(metadata, dict):
+            raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is not an object")
+
+        data_offsets = metadata.get("data_offsets")
+        if not isinstance(data_offsets, list) or len(data_offsets) != 2:
+            raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is missing data_offsets")
+        start_offset, end_offset = data_offsets
+        if not isinstance(start_offset, int) or not isinstance(end_offset, int):
+            raise MizuImportError(f"tensor {tensor_name} in {path} has non-integer data_offsets")
+        if start_offset < 0 or end_offset <= start_offset:
+            raise MizuImportError(f"tensor {tensor_name} in {path} has invalid data_offsets {data_offsets}")
+        if end_offset > payload_size:
+            raise MizuImportError(
+                f"tensor {tensor_name} in {path} points beyond EOF with data_offsets {data_offsets}"
+            )
+        _, _, expected_size = parse_tensor_shape_and_dtype(path, tensor_name, metadata)
+        if end_offset - start_offset != expected_size:
+            raise MizuImportError(
+                f"tensor {tensor_name} in {path} has data_offsets {data_offsets} "
+                f"but expected {expected_size} bytes from dtype/shape"
+            )
 
 
 def normalize_tensor_record(model_root: Path, shard_path: Path, name: str, metadata: Any) -> dict[str, Any]:
-    if not isinstance(metadata, dict):
-        raise MizuImportError(f"tensor metadata for {name} in {shard_path} is not an object")
-
-    dtype = DTYPE_MAP.get(str(metadata.get("dtype", "")).upper(), "unknown")
-    shape = metadata.get("shape", [])
-    if dtype == "unknown" or not isinstance(shape, list) or not shape:
-        raise MizuImportError(f"tensor metadata for {name} in {shard_path} is missing dtype/shape")
-    if any((not isinstance(dim, int) or dim <= 0) for dim in shape):
-        raise MizuImportError(f"tensor {name} in {shard_path} has invalid shape {shape}")
+    dtype, shape, _ = parse_tensor_shape_and_dtype(shard_path, name, metadata)
 
     role = classify_tensor_role(name)
     return {
@@ -189,6 +226,32 @@ def normalize_tensor_record(model_root: Path, shard_path: Path, name: str, metad
         "bundle_rel": Path("weights") / shard_path.name,
         "shape": shape,
     }
+
+
+def parse_tensor_shape_and_dtype(path: Path, tensor_name: str, metadata: Any) -> tuple[str, list[int], int]:
+    if not isinstance(metadata, dict):
+        raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is not an object")
+
+    dtype_name = str(metadata.get("dtype", "")).upper()
+    dtype = DTYPE_MAP.get(dtype_name, "unknown")
+    shape = metadata.get("shape", [])
+    if dtype == "unknown" or not isinstance(shape, list) or not shape:
+        raise MizuImportError(f"tensor metadata for {tensor_name} in {path} is missing dtype/shape")
+    if any((not isinstance(dim, int) or dim <= 0) for dim in shape):
+        raise MizuImportError(f"tensor {tensor_name} in {path} has invalid shape {shape}")
+
+    element_size = DTYPE_SIZES[dtype_name]
+    element_count = product(shape)
+    if element_count > MAX_SAFE_I64 // element_size:
+        raise MizuImportError(f"tensor {tensor_name} in {path} has unreasonable shape {shape}")
+    return dtype, shape, element_count * element_size
+
+
+def product(values: list[int]) -> int:
+    result = 1
+    for value in values:
+        result *= value
+    return result
 
 
 def classify_tensor_role(name: str) -> str:

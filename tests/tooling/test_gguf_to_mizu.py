@@ -26,6 +26,13 @@ GGML_TYPES = {
     "Q5_K": 13,
 }
 
+GGML_QUANT_SIZES = {
+    "F32": (1, 4),
+    "F16": (1, 2),
+    "Q4_K": (256, 144),
+    "Q5_K": (256, 176),
+}
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="mizu_gguf_importer_") as temp_root:
@@ -177,6 +184,72 @@ def main() -> int:
             "token_embd.weight|embedding_table|f16|row_major|weights/gemma4.gguf|2816x262144|q5_k",
         )
 
+        broken_model = temp_path / "broken-offset.gguf"
+        write_gguf(
+            broken_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Broken Qwen3.5"),
+                "general.type": ("string", "model"),
+            },
+            [("token_embd.weight", [4096, 248320], "Q4_K", 4096)],
+            payload_bytes=128,
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(broken_model),
+                "--output-root",
+                str(temp_path / "broken_mizu"),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "GGUF importer should reject tensors that point beyond EOF",
+            completed,
+            "points beyond EOF",
+        )
+
+        extent_broken_model = temp_path / "broken-extent.gguf"
+        write_gguf(
+            extent_broken_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Broken Extent Qwen3.5"),
+                "general.type": ("string", "model"),
+            },
+            [("token_embd.weight", [16, 16], "F32", 0)],
+            payload_bytes=8,
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(extent_broken_model),
+                "--output-root",
+                str(temp_path / "broken_extent_mizu"),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "GGUF importer should reject tensors whose full encoded extent runs beyond EOF",
+            completed,
+            "points beyond EOF",
+        )
+
     print("test_gguf_to_mizu: PASS")
     return 0
 
@@ -185,6 +258,7 @@ def write_gguf(
     path: Path,
     metadata: dict[str, tuple[str, object]],
     tensors: list[tuple[str, list[int], str, int]],
+    payload_bytes: int | None = None,
 ) -> None:
     with path.open("wb") as handle:
         handle.write(b"GGUF")
@@ -211,13 +285,34 @@ def write_gguf(
             handle.write(struct.pack("<I", GGML_TYPES[ggml_type]))
             handle.write(struct.pack("<Q", offset))
 
-        handle.write(b"\0" * 128)
+        if payload_bytes is None:
+            alignment = int(metadata.get("general.alignment", ("uint32", 32))[1])
+            header_end = handle.tell()
+            padding = (alignment - (header_end % alignment)) % alignment
+            payload_bytes = padding + max(
+                offset + tensor_byte_size(shape, ggml_type)
+                for _, shape, ggml_type, offset in tensors
+            )
+        if payload_bytes > 0:
+            handle.seek(payload_bytes - 1, 1)
+            handle.write(b"\0")
 
 
 def write_string(handle: object, value: str) -> None:
     encoded = value.encode("utf-8")
     handle.write(struct.pack("<Q", len(encoded)))
     handle.write(encoded)
+
+
+def tensor_byte_size(shape: list[int], ggml_type: str) -> int:
+    block_elements, block_bytes = GGML_QUANT_SIZES[ggml_type]
+    row_elements = shape[0]
+    if row_elements % block_elements != 0:
+        raise AssertionError(f"fixture shape {shape} is incompatible with {ggml_type}")
+    row_count = 1
+    for dim in shape[1:]:
+        row_count *= dim
+    return row_count * ((row_elements // block_elements) * block_bytes)
 
 
 def expect_file_contains(path: Path, needle: str) -> None:
@@ -249,6 +344,13 @@ def expect_equal_list(label: str, actual: list[str], expected: list[str]) -> Non
 def expect_path_exists(path: Path) -> None:
     if not path.exists():
         raise AssertionError(f"missing expected path: {path}")
+
+
+def expect_failed_run(label: str, completed: subprocess.CompletedProcess[str], stderr_needle: str) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: command unexpectedly succeeded")
+    if stderr_needle not in completed.stderr:
+        raise AssertionError(f"{label}: missing stderr text {stderr_needle!r}\n{completed.stderr}")
 
 
 if __name__ == "__main__":

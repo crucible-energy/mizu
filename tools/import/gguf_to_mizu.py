@@ -84,6 +84,44 @@ DIRECT_DTYPE_MAP = {
     "i32": "i32",
 }
 
+GGML_QUANT_SIZES = {
+    "f32": (1, 4),
+    "f16": (1, 2),
+    "q4_0": (32, 18),
+    "q4_1": (32, 20),
+    "q5_0": (32, 22),
+    "q5_1": (32, 24),
+    "q8_0": (32, 34),
+    "q8_1": (32, 36),
+    "q2_k": (256, 84),
+    "q3_k": (256, 110),
+    "q4_k": (256, 144),
+    "q5_k": (256, 176),
+    "q6_k": (256, 210),
+    "q8_k": (256, 292),
+    "iq2_xxs": (256, 66),
+    "iq2_xs": (256, 74),
+    "iq3_xxs": (256, 98),
+    "iq1_s": (256, 50),
+    "iq4_nl": (32, 18),
+    "iq3_s": (256, 110),
+    "iq2_s": (256, 82),
+    "iq4_xs": (256, 136),
+    "i8": (1, 1),
+    "i16": (1, 2),
+    "i32": (1, 4),
+    "i64": (1, 8),
+    "f64": (1, 8),
+    "iq1_m": (256, 56),
+    "bf16": (1, 2),
+    # These ARM-repacked formats retain q4_0 storage byte counts.
+    "q4_0_4_4": (32, 18),
+    "q4_0_4_8": (32, 18),
+    "q4_0_8_8": (32, 18),
+    "tq1_0": (256, 54),
+    "tq2_0": (256, 66),
+}
+
 
 @dataclass(frozen=True)
 class MetadataValue:
@@ -295,11 +333,22 @@ def parse_gguf_file(path: Path, source_kind: str) -> GgufFile:
         if alignment <= 0:
             alignment = 32
         tensor_data_start = align_offset(handle.tell(), alignment)
+        file_size = path.stat().st_size
+        if tensor_data_start >= file_size:
+            raise GgufImportError(f"GGUF tensor data starts beyond EOF in {path}")
         tensors: list[GgufTensor] = []
         for name, shape, ggml_type, data_offset in tensor_records:
             source_offset = tensor_data_start + data_offset
             if source_offset > MAX_SAFE_I64:
                 raise GgufImportError(f"tensor {name} in {path} has unreasonable source offset {source_offset}")
+            if source_offset >= file_size:
+                raise GgufImportError(f"tensor {name} in {path} points beyond EOF at offset {source_offset}")
+            encoded_tensor_bytes = ggml_tensor_nbytes(path, name, shape, ggml_type)
+            if encoded_tensor_bytes > file_size - source_offset:
+                raise GgufImportError(
+                    f"tensor {name} in {path} points beyond EOF at offset {source_offset} "
+                    f"with byte size {encoded_tensor_bytes}"
+                )
             tensors.append(
                 GgufTensor(
                     name=name,
@@ -321,7 +370,7 @@ def parse_gguf_file(path: Path, source_kind: str) -> GgufFile:
         metadata_count=metadata_count,
         metadata=metadata,
         tensors=tensors,
-        file_size=path.stat().st_size,
+        file_size=file_size,
     )
 
 
@@ -454,6 +503,29 @@ def normalize_ggml_dtype(ggml_type: str) -> str:
     if ggml_type in {"i16", "i64", "f64"}:
         return "f32"
     return "f16"
+
+
+def ggml_tensor_nbytes(path: Path, tensor_name: str, shape: list[int], ggml_type: str) -> int:
+    block_elements, block_bytes = GGML_QUANT_SIZES.get(ggml_type, (0, 0))
+    if block_elements <= 0 or block_bytes <= 0:
+        raise GgufImportError(f"tensor {tensor_name} in {path} has unsupported GGML type {ggml_type}")
+
+    row_elements = shape[0]
+    if row_elements % block_elements != 0:
+        raise GgufImportError(
+            f"tensor {tensor_name} in {path} has shape {shape} incompatible with GGML type {ggml_type}"
+        )
+
+    row_bytes = (row_elements // block_elements) * block_bytes
+    total_rows = 1
+    for dim in shape[1:]:
+        if total_rows > MAX_SAFE_I64 // dim:
+            raise GgufImportError(f"tensor {tensor_name} in {path} has unreasonable row count for shape {shape}")
+        total_rows *= dim
+
+    if row_bytes > MAX_SAFE_I64 // total_rows:
+        raise GgufImportError(f"tensor {tensor_name} in {path} has unreasonable byte size for shape {shape}")
+    return total_rows * row_bytes
 
 
 def infer_layout_name(role: str, shape: list[int]) -> str:

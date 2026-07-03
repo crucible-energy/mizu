@@ -1,23 +1,22 @@
 # AGENTS.md
 
-subsequent / Crucible Contribution Guidance (Agents + Humans)
+mizu / Crucible Contribution Guidance (Agents + Humans)
 
-Last reviewed: June 20, 2026
+Last reviewed: July 3, 2026
 
-The GitHub repo description for `crucible-energy/subsequent` is currently
-unset.
+The GitHub repo description for `crucible-energy/mizu` is:
+"Work in progress inference layer optimized for small agent systems."
 
-Until that changes, work here is judged on whether it keeps the repo bootstrap
-truthful, reviewable, provenance-aware, and easy to extend without locking the
-project into an invented mission too early.
+Until that changes, work here is judged on whether it makes that inference
+layer more truthful, reviewable, validated, and execution-ready without
+overstating backend completeness.
 
-This file is minimally adapted from the latest complete sibling bootstrap
-guidance copied from `../nichthub/AGENTS.md` for this project at
-`/Users/sam/git/crucible/subsequent`.
+This file is minimally adapted from `../subsequent/AGENTS.md` for this project
+at `/Users/sam/git/crucible/mizu`.
 
 ## Working Context
 
-- Repository path: `/Users/sam/git/crucible/subsequent`.
+- Repository path: `/Users/sam/git/crucible/mizu`.
 - Read `README.md` first for current repo framing.
 - Read `SAM.md` when collaboration style, ownership context, or ambition
   management materially affects the work.
@@ -25,16 +24,18 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
   collaboration style, or systems-method context materially affects the work.
 - Read `SCOTT.md` when Scott's review or collaboration expectations materially
   affect the work.
-- `SAM.md` is an intentional sibling copy from `../nichthub/SAM.md`.
-- `LYNN.md` is an intentional sibling copy from `../nichthub/LYNN.md`.
-- `SCOTT.md` is an intentional sibling copy from `../nichthub/SCOTT.md`.
+- `SAM.md` is an intentional sibling copy from `../shrinkray/SAM.md`.
+- `LYNN.md` is an intentional sibling copy from
+  `../gonzo-post-merge-wrapup/LYNN.md`.
+- `SCOTT.md` is an intentional sibling copy from `../shrinkray/SCOTT.md`.
 - `AGENTS.md` is intentionally adapted, not an exact copy, because repo mission,
   path, and trust boundaries differ.
 
-## Repository Bootstrap Mission
+## Repository Mission
 
-- Treat this repo as an intentionally minimal bootstrap surface until a real
-  product, code, or corpus direction is explicitly established.
+- Treat this repo as a work-in-progress local inference runtime with real
+  cache, planner, session, importer, and C-ABI surfaces, but still-incomplete
+  backend execution.
 - Favor guidance, structure, and artifacts that improve truthfulness,
   reviewability, provenance, and future extensibility.
 - Preserve provenance for externally derived knowledge. Record source, date,
@@ -43,20 +44,19 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
 - Respect copyright, confidentiality, and licensing boundaries. Do not import
   private, proprietary, or non-redistributable material unless explicit
   authorization and handling rules are documented.
-- Separate current state, planned direction, bootstrap scaffolding, and open
+- Separate current state, planned direction, implementation scaffolding, and open
   questions. Do not blur speculation into canonical repo posture.
 - Prefer smaller, composable, cross-linkable units over an undifferentiated
   omnibus doc set.
 
 ## Repo Non-Negotiables
 
-- This repo is Markdown-first until a stronger local contract exists. Markdown
-  is the canonical review surface for bootstrap guidance, working policy,
-  initial specs, and repo-shape decisions. Add structured data or code only
-  when there is a clear local need.
-- The primary bootstrap artifacts are root guidance files, repo-framing docs,
-  lightweight manifests, and small validation helpers that keep those artifacts
-  trustworthy.
+- This repo is code-and-docs first. Fortran runtime code, bridge code, the C
+  ABI, importer tooling, tests, and current-state docs are all authority-bearing
+  review surfaces. Add new structure only when there is a clear local need.
+- The primary artifacts are runtime code, cache/planner/session machinery,
+  importer tooling, tests, manifests, and docs that keep current state and
+  constraints trustworthy.
 - Preserve the core loop:
   1. confirm the current repo state and stated scope
   2. make the smallest coherent change that improves the repo honestly
@@ -68,9 +68,6 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
   sibling pattern into canonical repo policy without making the change explicit.
 - No new CI, GitHub Actions, scheduled automation, branch protection, or other
   enforcement surfaces without explicit approval from Sam.
-- The initial June 14, 2026 guidance bootstrap is the intentional exception to
-  the branch-first rule: copy/adapt these root guidance files, commit them on
-  `main`, then follow the Branch-First Policy below for all future work.
 - When useful work is complete and validated, commit and push it unless
   explicitly asked to hold it back or unless doing so would publish a known
   broken build or failed required checks. Prefer frequent small commits over
@@ -103,9 +100,9 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
 
 ## Memory And Concurrency Safety
 
-- Since this repo's implementation surface is Zig and TypeScript rather than
-  Rust or Python, memory and concurrency safety must be explicit repo policy,
-  not assumed language magic.
+- Since this repo's implementation surface is primarily Fortran with C,
+  Objective-C, and CUDA bridge seams plus small Python import tools, memory and
+  concurrency safety must be explicit repo policy, not assumed language magic.
 - The following are non-negotiable in this repo:
   - memory safety
   - use-after-free prevention
@@ -113,27 +110,28 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
   - dangling pointer prevention
   - data race prevention
 - Apply those constraints here with the simplest enforceable local posture:
-  - no manual heap allocation or free in repo Zig code
-  - no raw pointer casts, pointer-int casts, or const-discarding casts in repo
-    Zig code
-  - no thread or atomic shared-state primitives in repo Zig code
-  - no `SharedArrayBuffer` or `Atomics` surfaces in repo JS or TS code
-- Until an explicit reviewed design says otherwise, the Subsequent runtime
-  contract is single-threaded, value-oriented, and heap-avoidant.
+  - prefer allocatable/value ownership over Fortran pointer aliasing and
+    lifetime ambiguity
+  - keep C, Objective-C, and CUDA bridge ownership, buffer sizes, and lifetime
+    boundaries explicit and single-owner
+  - avoid hidden shared mutable state; if concurrency is introduced, the
+    synchronization story must be explicit and reviewable
+- Until an explicit reviewed design says otherwise, the Mizu runtime contract
+  is explicit-state, fail-closed, and deterministic before it is clever.
 - Any exception to those rules requires:
   - explicit justification in the diff
   - a focused validation story for the affected safety property
   - an update to the repo-local safety audit so the exception is reviewable
-- `bun run safety:audit` is part of the repo's required local validation path,
-  and its emitted report is the source of truth for checked-file counts and
-  scan scope.
+- `make test` is part of the repo's required local validation path, and
+  targeted `build/tests/test_*` binaries plus tooling tests are appropriate
+  during iteration before rerunning the full suite.
 
-## Bootstrap Priorities
+## Repo Priorities
 
 - Prefer plain, durable formats first: Markdown for prose and reviewable policy;
   JSON/YAML/TOML/CSV only when structured metadata or tool contracts actually
   need them.
-- Design bootstrap additions for retrieval and review: stable headings, clear
+- Design repo additions for retrieval and review: stable headings, clear
   scope, explicit status, provenance notes, and low duplication.
 - Favor quality, density, and trust over volume.
 - Pair consequential claims with source references, observed evidence, or clear
@@ -179,7 +177,7 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
 
 - Use labels such as `Current`, `Planned`, `Observed`, `Measured`, `Inferred`,
   `Hypothesis`, and `Open Question` when the distinction matters.
-- For bootstrap documentation, prefer this information shape:
+- For repo documentation, prefer this information shape:
   - purpose and scope
   - current repo state
   - source and provenance
@@ -193,32 +191,25 @@ guidance copied from `../nichthub/AGENTS.md` for this project at
 - If a capability, workflow, or enforcement surface does not yet exist, do not
   write as though support is complete.
 - Keep terminology stable:
-  - `subsequent` for the repo/project name
-  - `bootstrap` for the initial root-guidance setup
-  - `branch-first` for the post-bootstrap git workflow
+  - `mizu` for the repo/project name
+  - `branch-first` for the git workflow used here
   - `Current`, `Observed`, `Measured`, `Planned`, and `Open Question` for claim
     and lifecycle status
 
 ## Branch-First Policy
 
-- All future work after the initial guidance bootstrap must happen on a feature
-  branch. Direct commits to `main` are prohibited except for explicitly
-  approved automated maintenance.
+- All work must happen on a feature branch. Direct commits to `main` are
+  prohibited except for explicitly approved automated maintenance.
 - Good branch names document function, value, or domain meaning:
-  `docs/repo-bootstrap`, `chore/root-guidance`, `feat/<clear-domain>`,
+  `docs/agent-guidance`, `fix/cache-persistence`, `feat/<clear-domain>`,
   `fix/<specific-issue>`.
 - Bad branch names: `tmp`, `misc`, `final-final`, `fix`.
 - Every branch must pass the repo's relevant local checks before opening a pull
-  request. This repo now has a stronger repo-native gate:
-  - run `bun install` after clone so `postinstall` sets `core.hooksPath` to
-    `.githooks`
-  - if needed, repair that explicitly with `bun run hooks:install`
-  - rely on the repo-local pre-commit hook to apply deterministic formatting
-    before every commit using the shared sibling website `biome.json` plus
-    `zig fmt`
-  - rely on the repo-local pre-push hook, which runs
-    `bash scripts/subsequent-pre-push-check.sh`, before every push
-  - run `bun run check` and `git diff --check` before opening or updating a PR
+  request. The default local gate here is:
+  - run `make test`
+  - run `git diff --check`
+  - during narrow iteration, prefer the smallest relevant `build/tests/test_*`
+    binary or tooling test before rerunning the full suite
 - After useful validated work on a feature branch, push the branch promptly so
   remote state stays aligned with local progress. Default to publishing each
   validated useful change rather than batching unrelated work locally.

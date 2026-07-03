@@ -55,6 +55,10 @@ done
   echo '--restage requires --write' >&2
   exit 2
 }
+[ "$restage" -eq 0 ] || [ "$scope" = 'staged' ] || {
+  echo '--restage requires --staged' >&2
+  exit 2
+}
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
@@ -89,7 +93,7 @@ is_excluded() {
 
 is_text_candidate() {
   case "$1" in
-    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.tsv|*.mizu|*.sh|*.bash|*.zsh|*.py|*.f90|*.F90|*.f|*.F|*.c|*.h|*.cc|*.cpp|*.cxx|*.hpp|*.m|*.mm|*.cu|*.cuh|*.go|*.gitignore|*.gitattributes|*.editorconfig|Makefile|*.mk|README|README.*|AGENTS.md|SAM.md|LYNN.md|SCOTT.md|.githooks/*)
+    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.tsv|*.mizu|*.sh|*.bash|*.zsh|*.py|*.f90|*.F90|*.f|*.F|*.c|*.h|*.cc|*.cpp|*.cxx|*.hpp|*.m|*.mm|*.cu|*.cuh|*.go|*.gitignore|*.gitattributes|*.editorconfig|Makefile|*.mk|README|README.*|.githooks/*)
       return 0
       ;;
   esac
@@ -137,12 +141,6 @@ if [ "$restage" -eq 1 ]; then
     [ -n "$unstaged_file" ] || continue
     unstaged+=("$unstaged_file")
   done < <(unstaged_files)
-  for file in "${files[@]}"; do
-    if [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
-      printf 'format-local: refusing to restage partially staged file: %s\n' "$file" >&2
-      exit 2
-    fi
-  done
 fi
 
 changed=()
@@ -153,6 +151,11 @@ for file in "${files[@]}"; do
   normalize_copy "$file" "$tmp_file"
   if ! cmp -s "$file" "$tmp_file"; then
     if [ "$mode" = 'write' ]; then
+      if [ "$restage" -eq 1 ] && [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
+        printf 'format-local: refusing to restage partially staged file that requires normalization: %s\n' "$file" >&2
+        rm -f "$tmp_file"
+        exit 2
+      fi
       cat "$tmp_file" > "$file"
       rm -f "$tmp_file"
       changed+=("$file")

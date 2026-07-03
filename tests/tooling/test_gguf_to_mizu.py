@@ -26,6 +26,13 @@ GGML_TYPES = {
     "Q5_K": 13,
 }
 
+GGML_QUANT_SIZES = {
+    "F32": (1, 4),
+    "F16": (1, 2),
+    "Q4_K": (256, 144),
+    "Q5_K": (256, 176),
+}
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="mizu_gguf_importer_") as temp_root:
@@ -177,7 +184,7 @@ def main() -> int:
             "token_embd.weight|embedding_table|f16|row_major|weights/gemma4.gguf|2816x262144|q5_k",
         )
 
-        broken_model = temp_path / "broken.gguf"
+        broken_model = temp_path / "broken-offset.gguf"
         write_gguf(
             broken_model,
             {
@@ -206,6 +213,39 @@ def main() -> int:
         )
         expect_failed_run(
             "GGUF importer should reject tensors that point beyond EOF",
+            completed,
+            "points beyond EOF",
+        )
+
+        extent_broken_model = temp_path / "broken-extent.gguf"
+        write_gguf(
+            extent_broken_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Broken Extent Qwen3.5"),
+                "general.type": ("string", "model"),
+            },
+            [("token_embd.weight", [16, 16], "F32", 0)],
+            payload_bytes=8,
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(extent_broken_model),
+                "--output-root",
+                str(temp_path / "broken_extent_mizu"),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        expect_failed_run(
+            "GGUF importer should reject tensors whose full encoded extent runs beyond EOF",
             completed,
             "points beyond EOF",
         )
@@ -249,7 +289,7 @@ def write_gguf(
             alignment = int(metadata.get("general.alignment", ("uint32", 32))[1])
             header_end = handle.tell()
             padding = (alignment - (header_end % alignment)) % alignment
-            payload_bytes = max(offset for _, _, _, offset in tensors) + padding + 1
+            payload_bytes = padding + max(offset + tensor_byte_size(shape, ggml_type) for _, shape, ggml_type, offset in tensors)
         handle.write(b"\0" * payload_bytes)
 
 
@@ -257,6 +297,17 @@ def write_string(handle: object, value: str) -> None:
     encoded = value.encode("utf-8")
     handle.write(struct.pack("<Q", len(encoded)))
     handle.write(encoded)
+
+
+def tensor_byte_size(shape: list[int], ggml_type: str) -> int:
+    block_elements, block_bytes = GGML_QUANT_SIZES[ggml_type]
+    row_elements = shape[0]
+    if row_elements % block_elements != 0:
+        raise AssertionError(f"fixture shape {shape} is incompatible with {ggml_type}")
+    row_count = 1
+    for dim in shape[1:]:
+        row_count *= dim
+    return row_count * ((row_elements // block_elements) * block_bytes)
 
 
 def expect_file_contains(path: Path, needle: str) -> None:

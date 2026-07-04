@@ -84,6 +84,7 @@ CONTRACT_SMOKES := \
 
 CONTRACT_BINS := \
 	$(TEST_DIR)/test_backend_availability \
+	$(TEST_DIR)/test_handle_lifecycle \
 	$(TEST_DIR)/test_opaque_handles \
 	$(TEST_DIR)/test_cuda_artifacts \
 	$(TEST_DIR)/test_qwench_gguf_cuda_smoke \
@@ -389,6 +390,25 @@ $(TEST_DIR)/test_backend_availability: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(BACKEND_F90) \
 		$(CAPI_F90) \
 		$(TEST_DIR)/test_backend_availability.o \
+		$(APPLE_BRIDGE_OBJ) \
+		$(CUDA_BRIDGE_OBJ) \
+		$(APPLE_BRIDGE_LINK_LIBS) \
+		$(CUDA_BRIDGE_LINK_LIBS)
+
+$(TEST_DIR)/test_handle_lifecycle.o: tests/contract/test_handle_lifecycle.c | $(TEST_DIR)
+	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+$(TEST_DIR)/test_handle_lifecycle: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
+	$(CAPI_F90) $(TEST_DIR)/test_handle_lifecycle.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
+	mkdir -p $(TEST_DIR)/handle_lifecycle_mods
+	$(FC) $(FFLAGS) -J $(TEST_DIR)/handle_lifecycle_mods -I $(TEST_DIR)/handle_lifecycle_mods -o $@ \
+		$(COMMON_F90) \
+		$(MODEL_F90) \
+		$(CACHE_F90) \
+		$(RUNTIME_F90) \
+		$(BACKEND_F90) \
+		$(CAPI_F90) \
+		$(TEST_DIR)/test_handle_lifecycle.o \
 		$(APPLE_BRIDGE_OBJ) \
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \

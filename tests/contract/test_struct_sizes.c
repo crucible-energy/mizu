@@ -15,6 +15,14 @@ static int expect_status(const char *label, mizu_status_code_t actual, mizu_stat
     return 1;
 }
 
+static int expect_true(const char *label, int condition) {
+    if (!condition) {
+        fprintf(stderr, "%s\n", label);
+        return 0;
+    }
+    return 1;
+}
+
 int main(void) {
     mizu_runtime_t *runtime = NULL;
     mizu_runtime_t *bad_runtime = NULL;
@@ -109,6 +117,14 @@ int main(void) {
     report.struct_size = sizeof(report) - 1;
     status = mizu_model_get_last_report(model, &report);
     if (!expect_status("model report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+
+    memset(&report, 0, sizeof(report));
+    report.struct_size = sizeof(report);
+    status = mizu_model_get_last_report(model, &report);
+    if (!expect_status("model report should accept full struct", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("model report struct_size should survive reuse", report.struct_size == sizeof(report))) return 1;
+    status = mizu_model_get_last_report(model, &report);
+    if (!expect_status("model report should allow same struct reuse", status, MIZU_STATUS_OK)) return 1;
 
     memset(&session_info, 0, sizeof(session_info));
     session_info.struct_size = sizeof(session_info) - 1;

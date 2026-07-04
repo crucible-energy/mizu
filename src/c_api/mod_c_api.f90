@@ -6106,8 +6106,10 @@ contains
 
   subroutine copy_internal_report_to_c(report, c_report)
     type(execution_report), intent(in)     :: report
-    type(c_execution_report), intent(out)  :: c_report
+    type(c_execution_report), intent(inout)  :: c_report
+    integer(c_size_t)                       :: struct_size
 
+    struct_size = c_report%struct_size
     c_report%stage_kind      = int(report%stage_kind, kind=c_int32_t)
     c_report%backend_family  = int(report%backend_family, kind=c_int32_t)
     c_report%execution_route = int(report%execution_route, kind=c_int32_t)
@@ -6117,6 +6119,7 @@ contains
     c_report%fallback_reason = int(report%fallback_reason, kind=c_int32_t)
     c_report%cache_flags     = int(report%cache_flags, kind=c_int64_t)
     c_report%elapsed_us      = int(report%elapsed_us, kind=c_int64_t)
+    c_report%struct_size     = struct_size
   end subroutine copy_internal_report_to_c
 
   integer(i32) function prepare_report_buffer(report_buffer_ptr, required_count) result(status_code)

@@ -23,6 +23,11 @@ def main() -> int:
         run(["git", "config", "user.name", "Mizu Test"], cwd=repo_root)
         run(["git", "config", "user.email", "mizu-test@example.com"], cwd=repo_root)
 
+        completed = run_completed(["bash", str(FORMATTER), "--all", "--write", "--restage"], cwd=repo_root)
+        expect_equal("restage without staged should fail", completed.returncode, 2)
+        if "--restage requires --staged" not in completed.stderr:
+            raise AssertionError(f"missing expected stderr: {completed.stderr!r}")
+
         script_path = repo_root / "script.sh"
         script_path.write_bytes(b"#!/usr/bin/env bash\r\necho hi   \r\n")
         script_path.chmod(0o755)
@@ -143,6 +148,15 @@ def main() -> int:
 
 
 def run(args: list[str], cwd: Path) -> None:
+    completed = run_completed(args, cwd)
+    if completed.returncode == 0:
+        return
+    print(completed.stdout)
+    print(completed.stderr, file=sys.stderr)
+    raise SystemExit(completed.returncode)
+
+
+def run_completed(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         args,
         cwd=cwd,
@@ -151,11 +165,7 @@ def run(args: list[str], cwd: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    if completed.returncode == 0:
-        return
-    print(completed.stdout)
-    print(completed.stderr, file=sys.stderr)
-    raise SystemExit(completed.returncode)
+    return completed
 
 
 def expect_equal(label: str, actual: object, expected: object) -> None:

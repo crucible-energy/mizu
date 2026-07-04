@@ -28,6 +28,7 @@ int main(void) {
     mizu_runtime_t *runtime_apple = NULL;
     mizu_model_t *model = NULL;
     mizu_status_code_t status;
+    mizu_model_info_t model_info;
     size_t required_bytes = 0;
     size_t required_bytes_zero = 0;
     size_t required_bytes_small = 0;
@@ -123,6 +124,20 @@ int main(void) {
 
     status = mizu_model_open(runtime_apple, &model_config, &model);
     if (!expect_status("model open should succeed when Apple is forced available", status, MIZU_STATUS_OK)) return 1;
+
+    model_info.struct_size = sizeof(model_info);
+    status = mizu_model_get_info(model, &model_info);
+    if (!expect_status("model get info on forced-Apple model", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("model family should reflect gemma fixture",
+                     model_info.model_family == MIZU_MODEL_FAMILY_GEMMA4)) return 1;
+    if (!expect_true("allowed backend mask should round-trip Apple ANE request",
+                     model_info.allowed_backend_mask == MIZU_BACKEND_MASK_APPLE_ANE)) return 1;
+    if (!expect_true("model features should include multimodal support",
+                     (model_info.model_features & MIZU_MODEL_FEATURE_MULTIMODAL) != 0)) return 1;
+    if (!expect_true("model features should include projector support",
+                     (model_info.model_features & MIZU_MODEL_FEATURE_PROJECTOR) != 0)) return 1;
+    if (!expect_true("projector slot count should match fixture manifest",
+                     model_info.projector_slot_count == 1)) return 1;
 
     status = mizu_model_close(model);
     if (!expect_status("close forced-Apple model", status, MIZU_STATUS_OK)) return 1;

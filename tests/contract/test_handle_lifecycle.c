@@ -31,6 +31,13 @@ int main(void) {
     mizu_model_info_t model_info_reuse;
     size_t required_bytes = 0;
 
+    status = mizu_session_close(NULL);
+    if (!expect_status("null session close should be a no-op", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(NULL);
+    if (!expect_status("null model close should be a no-op", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_runtime_destroy(NULL);
+    if (!expect_status("null runtime destroy should be a no-op", status, MIZU_STATUS_OK)) return 1;
+
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE=1\n");
         return 1;

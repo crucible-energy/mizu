@@ -861,6 +861,7 @@ contains
 
     status_code = validate_resume(session)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_runtime_error(runtime, status_code, "session cannot resume in current state")
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
@@ -870,6 +871,7 @@ contains
     if (session%live_context_byte_count > 0_i32 .and. .not. session%has_resident_live_context) then
       call restore_session_checkpoint(runtime%config%cache_root, runtime_cache, model, session, restored_ok)
       if (.not. restored_ok) then
+        call set_runtime_error(runtime, MIZU_STATUS_INVALID_STATE, "session checkpoint restore failed")
         mizu_session_resume = int(MIZU_STATUS_INVALID_STATE, kind=c_int32_t)
         return
       end if

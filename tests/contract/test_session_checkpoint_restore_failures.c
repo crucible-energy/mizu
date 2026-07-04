@@ -170,6 +170,8 @@ static int run_restore_failure_case(const char *cache_root, int mutation_kind, c
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
     mizu_session_info_t session_info;
+    size_t required_bytes;
+    char error_buffer[256];
     char artifact_path[1024];
     char label[128];
 
@@ -198,6 +200,7 @@ static int run_restore_failure_case(const char *cache_root, int mutation_kind, c
     memset(&park_buffer, 0, sizeof(park_buffer));
     memset(&resume_buffer, 0, sizeof(resume_buffer));
     memset(&session_info, 0, sizeof(session_info));
+    memset(error_buffer, 0, sizeof(error_buffer));
 
     prefill_buffer.struct_size = sizeof(prefill_buffer);
     prefill_buffer.reports = prefill_reports;
@@ -221,6 +224,13 @@ static int run_restore_failure_case(const char *cache_root, int mutation_kind, c
 
     status = mizu_session_resume(session, &resume_buffer);
     if (!expect_status(label_prefix, status, MIZU_STATUS_INVALID_STATE)) return 0;
+
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error after failed resume", status, MIZU_STATUS_OK)) return 0;
+    if (!expect_true("failed resume should publish non-empty runtime error", required_bytes > 1)) return 0;
+    if (!expect_true("failed resume error should mention checkpoint restore",
+                     strstr(error_buffer, "checkpoint restore failed") != NULL)) return 0;
 
     session_info.struct_size = sizeof(session_info);
     status = mizu_session_get_info(session, &session_info);

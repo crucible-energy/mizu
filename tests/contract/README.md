@@ -17,6 +17,11 @@ These suites cover the `API-C*` portion of
     when the requested backend family is unavailable on the runtime
   - verifies the runtime surfaces a useful last-error string for that case
   - verifies forcing Apple availability makes the same model-open request pass
+- `test_model_open_failures.c`
+  - opens intentionally broken model fixtures through the public API
+  - verifies malformed manifest and broken import-bundle roots fail cleanly
+  - verifies failed opens do not leave partially opened model handles behind
+  - verifies the runtime remains usable for a later valid model open
 - `test_stage_reports.c`
   - exercises `prefill`, `decode`, `park`, and `resume` through the public API
     and verifies nonzero report plan IDs, route-honest stage reports, in-process

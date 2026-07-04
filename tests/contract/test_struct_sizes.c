@@ -147,6 +147,14 @@ int main(void) {
     status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens for prefill", status, MIZU_STATUS_OK)) return 1;
 
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 0;
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should reject undersized report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("prefill should report required report count", report_buffer.report_count == 1)) return 1;
+
     memset(report_storage, 0, sizeof(report_storage));
     memset(&report_buffer, 0, sizeof(report_buffer));
     report_buffer.struct_size = sizeof(report_buffer);
@@ -177,11 +185,34 @@ int main(void) {
     status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
     if (!expect_status("decode should reject short result struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
 
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+    if (!expect_status("decode should reject undersized token buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("decode should report required token count", decode_result.token_count == 1)) return 1;
+
+    {
+        int32_t decoded_token = 0;
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+        decode_result.token_buffer = &decoded_token;
+        decode_result.token_capacity = 1;
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode should succeed with one token slot", status, MIZU_STATUS_OK)) return 1;
+    }
+
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer) - 1;
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("read output should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output should reject undersized byte buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("read output should report required byte count", output_buffer.bytes_written == sizeof(int32_t))) return 1;
 
     memset(&report, 0, sizeof(report));
     report.struct_size = sizeof(report) - 1;

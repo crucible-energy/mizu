@@ -214,9 +214,15 @@ int main(void) {
 
     prefill_buffer.struct_size = sizeof(prefill_buffer);
     prefill_buffer.reports = prefill_reports;
-    prefill_buffer.report_capacity = 2;
+    prefill_buffer.report_capacity = 1;
     prefill_buffer.report_count = 0;
 
+    status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill should reject undersized multimodal report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("prefill should report two required stages", prefill_buffer.report_count == 2)) return 1;
+
+    prefill_buffer.report_capacity = 2;
+    prefill_buffer.report_count = 0;
     status = mizu_session_prefill(session, &prefill_buffer);
     if (!expect_status("prefill", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("prefill report count should be 2", prefill_buffer.report_count == 2)) return 1;

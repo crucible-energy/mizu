@@ -88,6 +88,7 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_handle_lifecycle \
 	$(TEST_DIR)/test_modal_input_validation \
 	$(TEST_DIR)/test_opaque_handles \
+	$(TEST_DIR)/test_session_checkpoint_restore_failures \
 	$(TEST_DIR)/test_session_state_guards \
 	$(TEST_DIR)/test_struct_sizes \
 	$(TEST_DIR)/test_cuda_artifacts \
@@ -470,6 +471,25 @@ $(TEST_DIR)/test_session_state_guards: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(BACKEND_F90) \
 		$(CAPI_F90) \
 		$(TEST_DIR)/test_session_state_guards.o \
+		$(APPLE_BRIDGE_OBJ) \
+		$(CUDA_BRIDGE_OBJ) \
+		$(APPLE_BRIDGE_LINK_LIBS) \
+		$(CUDA_BRIDGE_LINK_LIBS)
+
+$(TEST_DIR)/test_session_checkpoint_restore_failures.o: tests/contract/test_session_checkpoint_restore_failures.c | $(TEST_DIR)
+	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+$(TEST_DIR)/test_session_checkpoint_restore_failures: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
+	$(CAPI_F90) $(TEST_DIR)/test_session_checkpoint_restore_failures.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
+	mkdir -p $(TEST_DIR)/session_checkpoint_restore_failures_mods
+	$(FC) $(FFLAGS) -J $(TEST_DIR)/session_checkpoint_restore_failures_mods -I $(TEST_DIR)/session_checkpoint_restore_failures_mods -o $@ \
+		$(COMMON_F90) \
+		$(MODEL_F90) \
+		$(CACHE_F90) \
+		$(RUNTIME_F90) \
+		$(BACKEND_F90) \
+		$(CAPI_F90) \
+		$(TEST_DIR)/test_session_checkpoint_restore_failures.o \
 		$(APPLE_BRIDGE_OBJ) \
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \

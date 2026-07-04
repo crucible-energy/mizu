@@ -156,6 +156,11 @@ int main(void) {
     if (!expect_status("session info before prefill", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("fresh session should have no state flags", session_info.session_state_flags == 0)) return 1;
     if (!expect_true("fresh session should have zero kv tokens", session_info.kv_token_count == 0)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report on fresh session", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("fresh-session invalid ops should preserve none last report",
+                     last_report.stage_kind == MIZU_STAGE_NONE)) return 1;
 
     status = mizu_session_attach_tokens(session, tokens, 3, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens", status, MIZU_STATUS_OK)) return 1;
@@ -249,6 +254,11 @@ int main(void) {
     if (!expect_true("parked invalid ops should preserve parked flag",
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) != 0)) return 1;
     if (!expect_true("parked invalid ops should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after parked invalid ops", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("parked invalid ops should preserve park last report",
+                     last_report.stage_kind == MIZU_STAGE_PARK)) return 1;
 
     resume_buffer.struct_size = sizeof(resume_buffer) - 1;
     status = mizu_session_resume(session, &resume_buffer);

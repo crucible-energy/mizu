@@ -209,14 +209,29 @@ at `/Users/sam/git/crucible/mizu`.
 - Bad branch names: `tmp`, `misc`, `final-final`, `fix`.
 - Every branch must pass the repo's relevant local checks before opening a pull
   request. The default local gate here is:
-  - run `make test`
+  - install the repo-local hooks once with `make hooks`
+  - run `make format-check`
   - run `git diff --check`
+  - run `make test`
   - during narrow iteration, prefer the smallest relevant `build/tests/test_*`
     binary or tooling test before rerunning the full suite
+- The repo-local hooks are part of normal development, not optional hygiene:
+  - pre-commit runs `./scripts/format-local.sh --staged --write --restage`
+    and `git diff --cached --check`
+  - pre-push runs `bash scripts/mizu-pre-push-check.sh`
+  - before claiming a branch is ready, ensure those same checks pass when run
+    directly via `make format-check`, `git diff --check`, and `make test`
 - After useful validated work on a feature branch, push the branch promptly so
   remote state stays aligned with local progress. Default to publishing each
   validated useful change rather than batching unrelated work locally.
 - Pull requests should be small, reviewable, and focused on a single concern.
+- Do not open draft pull requests in this repo. If a pull request should
+  exist, open it ready for review after the relevant automated validation has
+  passed.
+- Be selective about pull request creation. Do not open a pull request merely
+  because a branch has changes; open one when the branch has reached a
+  meaningful reviewable checkpoint with sufficient automated coverage for the
+  claimed behavior.
 - Whenever giving a status update about a pull request, include the full PR URL
   in addition to any shorthand such as `#1`.
 - Squash-merge into `main` when the branch is ready, review findings are

@@ -90,12 +90,26 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_stage_reports
 
 TOOL_TESTS := \
+	tests/tooling/test_format_local.py \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
 
-.PHONY: all test unit-tests contract-tests contract-smokes tool-tests clean
+.PHONY: all hooks format format-check check-local test unit-tests contract-tests contract-smokes tool-tests clean
 
 all: test
+
+hooks:
+	bash scripts/install-local-hooks.sh
+
+format:
+	./scripts/format-local.sh --all --write
+
+format-check:
+	./scripts/format-local.sh --all --check
+
+check-local: format-check
+	git diff --check
+	$(MAKE) test
 
 test: unit-tests contract-tests tool-tests
 

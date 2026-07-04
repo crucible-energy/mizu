@@ -465,7 +465,7 @@ int main(void) {
     if (!expect_true("cuda prefill should route to CUDA", prefill_reports[1].execution_route == MIZU_EXEC_ROUTE_CUDA)) {
         return 1;
     }
-    if (!expect_true("cuda multimodal prefill should report projector then prefill", 
+    if (!expect_true("cuda multimodal prefill should report projector then prefill",
                      prefill_reports[0].stage_kind == MIZU_STAGE_PROJECTOR &&
                      prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) {
         return 1;

@@ -99,6 +99,45 @@ def main() -> int:
             "needs newline\n",
         )
 
+        staged_edit_path = repo_root / "staged_no_restage.txt"
+        staged_edit_path.write_text("baseline\n", encoding="utf-8")
+        run(["git", "add", "staged_no_restage.txt"], cwd=repo_root)
+        run(["git", "commit", "-qm", "add no-restage fixture"], cwd=repo_root)
+
+        staged_edit_path.write_bytes(b"needs newline")
+        run(["git", "add", "staged_no_restage.txt"], cwd=repo_root)
+        staged_edit_path.write_text("local edit stays\n", encoding="utf-8")
+
+        run(["bash", str(FORMATTER), "--staged", "--write"], cwd=repo_root)
+        expect_equal(
+            "no-restage staged blob normalized in index",
+            git_show(repo_root, "staged_no_restage.txt"),
+            "needs newline\n",
+        )
+        expect_equal(
+            "no-restage local worktree edits preserved",
+            staged_edit_path.read_text(encoding="utf-8"),
+            "local edit stays\n",
+        )
+
+        deleted_path = repo_root / "deleted_after_stage.txt"
+        deleted_path.write_text("baseline\n", encoding="utf-8")
+        run(["git", "add", "deleted_after_stage.txt"], cwd=repo_root)
+        run(["git", "commit", "-qm", "add delete fixture"], cwd=repo_root)
+
+        deleted_path.write_bytes(b"needs newline")
+        run(["git", "add", "deleted_after_stage.txt"], cwd=repo_root)
+        deleted_path.unlink()
+
+        run(["bash", str(FORMATTER), "--staged", "--write", "--restage"], cwd=repo_root)
+        expect_equal(
+            "deleted-path staged blob normalized in index",
+            git_show(repo_root, "deleted_after_stage.txt"),
+            "needs newline\n",
+        )
+        if deleted_path.exists():
+            raise AssertionError("unstaged deletion should be preserved in worktree")
+
     print("test_format_local: PASS")
     return 0
 

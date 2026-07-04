@@ -79,7 +79,7 @@ list_files() {
 }
 
 unstaged_files() {
-  git diff --name-only --diff-filter=ACMR
+  git diff --name-only
 }
 
 is_excluded() {
@@ -183,11 +183,15 @@ for file in "${files[@]}"; do
   if ! cmp -s "$source_file" "$tmp_file"; then
     if [ "$mode" = 'write' ]; then
       if [ "$scope" = 'staged' ]; then
-        if [ "$restage" -eq 1 ] && [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
-          write_index_from_tmp "$file" "$tmp_file"
+        if [ "$restage" -eq 1 ]; then
+          if [ "${#unstaged[@]}" -gt 0 ] && contains_path "$file" "${unstaged[@]}"; then
+            write_index_from_tmp "$file" "$tmp_file"
+          else
+            cat "$tmp_file" > "$file"
+            git add -- "$file"
+          fi
         else
-          cat "$tmp_file" > "$file"
-          git add -- "$file"
+          write_index_from_tmp "$file" "$tmp_file"
         fi
       else
         cat "$tmp_file" > "$file"

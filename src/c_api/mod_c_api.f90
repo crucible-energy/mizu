@@ -108,6 +108,7 @@ module mod_c_api
   public :: mizu_session_get_last_report
 
   integer(i64), parameter :: INITIAL_REGISTRY_CAPACITY = 8_i64
+  integer(i64), parameter :: MAX_RETIRED_HANDLE_BOXES_PER_KIND = 4096_i64
   integer(i32), parameter :: MAX_IMPORT_STAGE_PACK_DISPATCH = 4_i32
   integer(i32), parameter :: MAX_CUDA_PACK_PAGE_WORDS = 8_i32
   integer(i32), parameter :: MAX_CUDA_PACK_TILE_BYTES = 32_i32
@@ -245,6 +246,9 @@ module mod_c_api
   logical, allocatable, save :: runtime_used(:)
   logical, allocatable, save :: model_used(:)
   logical, allocatable, save :: session_used(:)
+  integer(i64), save :: retired_runtime_box_count = 0_i64
+  integer(i64), save :: retired_model_box_count = 0_i64
+  integer(i64), save :: retired_session_box_count = 0_i64
 
   interface
     function c_strlen(str) bind(c, name="strlen") result(length)
@@ -301,6 +305,12 @@ contains
     config%runtime_flags      = int(c_config%runtime_flags, kind=i64)
     call copy_c_string_ptr_to_fortran(c_config%cache_root_z, config%cache_root)
 
+    status_code = require_retired_handle_capacity(retired_runtime_box_count)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_runtime_create = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     slot_id = acquire_runtime_slot()
     call initialize_runtime_state(runtime_registry(slot_id), config)
     call initialize_runtime_cache_bundle(runtime_cache_registry(slot_id))
@@ -350,11 +360,7 @@ contains
     call reset_runtime_state(runtime)
     call reset_runtime_cache_bundle(runtime_cache_registry(slot_id))
     call reset_runtime_optimization_store(runtime_optimization_registry(slot_id))
-    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
-    ! alias a future handle after allocator reuse.
-    box%id = 0_c_int64_t
-    runtime_handle_ptrs(slot_id) = c_null_ptr
-    runtime_used(slot_id) = .false.
+    call retire_runtime_box(slot_id, box)
 
     mizu_runtime_destroy = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_runtime_destroy
@@ -459,6 +465,13 @@ contains
       return
     end if
 
+    status_code = require_retired_handle_capacity(retired_model_box_count)
+    if (status_code /= MIZU_STATUS_OK) then
+      call set_runtime_error(runtime, status_code, "model handle arena is exhausted")
+      mizu_model_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     slot_id = acquire_model_slot()
     call initialize_model_state(model_registry(slot_id), config, info)
     model_registry(slot_id)%handle%value = slot_id
@@ -525,11 +538,7 @@ contains
     end if
 
     call reset_model_state(model)
-    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
-    ! alias a future handle after allocator reuse.
-    box%id = 0_c_int64_t
-    model_handle_ptrs(slot_id) = c_null_ptr
-    model_used(slot_id) = .false.
+    call retire_model_box(slot_id, box)
 
     mizu_model_close = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_model_close
@@ -663,6 +672,12 @@ contains
     config%top_p              = real(c_config%top_p, kind=r32)
     config%session_flags      = int(c_config%session_flags, kind=i64)
 
+    status_code = require_retired_handle_capacity(retired_session_box_count)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     slot_id = acquire_session_slot()
     call initialize_session_state(session_registry(slot_id), config)
     session_registry(slot_id)%handle%value      = slot_id
@@ -706,11 +721,7 @@ contains
     end if
 
     call reset_session_state(session)
-    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
-    ! alias a future handle after allocator reuse.
-    box%id = 0_c_int64_t
-    session_handle_ptrs(slot_id) = c_null_ptr
-    session_used(slot_id) = .false.
+    call retire_session_box(slot_id, box)
 
     mizu_session_close = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_session_close
@@ -1614,7 +1625,8 @@ contains
 
     new_capacity = max(required_capacity, 2_i64 * current_capacity)
     allocate(new_registry(new_capacity), new_cache_registry(new_capacity), &
-             new_optimization_registry(new_capacity), new_handle_ptrs(new_capacity), new_used(new_capacity))
+             new_optimization_registry(new_capacity), &
+             new_handle_ptrs(new_capacity), new_used(new_capacity))
     new_registry = runtime_state()
     new_cache_registry = runtime_cache_bundle()
     new_optimization_registry = runtime_optimization_store()
@@ -1641,7 +1653,8 @@ contains
 
     if (.not. allocated(model_registry)) then
       new_capacity = max(INITIAL_REGISTRY_CAPACITY, required_capacity)
-      allocate(model_registry(new_capacity), model_handle_ptrs(new_capacity), model_used(new_capacity))
+      allocate(model_registry(new_capacity), model_handle_ptrs(new_capacity), &
+               model_used(new_capacity))
       model_registry = model_state()
       model_handle_ptrs = c_null_ptr
       model_used     = .false.
@@ -1673,7 +1686,8 @@ contains
 
     if (.not. allocated(session_registry)) then
       new_capacity = max(INITIAL_REGISTRY_CAPACITY, required_capacity)
-      allocate(session_registry(new_capacity), session_handle_ptrs(new_capacity), session_used(new_capacity))
+      allocate(session_registry(new_capacity), session_handle_ptrs(new_capacity), &
+               session_used(new_capacity))
       session_registry = session_state()
       session_handle_ptrs = c_null_ptr
       session_used     = .false.
@@ -1884,6 +1898,42 @@ contains
       end if
     end do
   end function find_session_handle_slot
+
+  subroutine retire_runtime_box(slot_id, box)
+    integer(i64), intent(in)       :: slot_id
+    type(runtime_box), pointer     :: box
+
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    runtime_handle_ptrs(slot_id) = c_null_ptr
+    runtime_used(slot_id) = .false.
+    retired_runtime_box_count = retired_runtime_box_count + 1_i64
+  end subroutine retire_runtime_box
+
+  subroutine retire_model_box(slot_id, box)
+    integer(i64), intent(in)     :: slot_id
+    type(model_box), pointer     :: box
+
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    model_handle_ptrs(slot_id) = c_null_ptr
+    model_used(slot_id) = .false.
+    retired_model_box_count = retired_model_box_count + 1_i64
+  end subroutine retire_model_box
+
+  subroutine retire_session_box(slot_id, box)
+    integer(i64), intent(in)       :: slot_id
+    type(session_box), pointer     :: box
+
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    session_handle_ptrs(slot_id) = c_null_ptr
+    session_used(slot_id) = .false.
+    retired_session_box_count = retired_session_box_count + 1_i64
+  end subroutine retire_session_box
 
   pure logical function is_runtime_slot_valid(slot_id) result(is_valid)
     integer(i64), intent(in) :: slot_id
@@ -6016,7 +6066,8 @@ contains
     end if
   end subroutine write_size_t_pointer
 
-  pure integer(i32) function require_input_struct_size(actual_size, expected_size) result(status_code)
+  pure integer(i32) function require_input_struct_size(actual_size, expected_size) &
+      result(status_code)
     integer(c_size_t), intent(in) :: actual_size
     integer(c_size_t), intent(in) :: expected_size
 
@@ -6024,13 +6075,24 @@ contains
     if (actual_size < expected_size) status_code = MIZU_STATUS_ABI_MISMATCH
   end function require_input_struct_size
 
-  pure integer(i32) function require_output_struct_size(actual_size, expected_size) result(status_code)
+  pure integer(i32) function require_output_struct_size(actual_size, expected_size) &
+      result(status_code)
     integer(c_size_t), intent(in) :: actual_size
     integer(c_size_t), intent(in) :: expected_size
 
     status_code = MIZU_STATUS_OK
     if (actual_size < expected_size) status_code = MIZU_STATUS_BUFFER_TOO_SMALL
   end function require_output_struct_size
+
+  pure integer(i32) function require_retired_handle_capacity(retired_count) &
+      result(status_code)
+    integer(i64), intent(in) :: retired_count
+
+    status_code = MIZU_STATUS_OK
+    if (retired_count >= MAX_RETIRED_HANDLE_BOXES_PER_KIND) then
+      status_code = MIZU_STATUS_BUSY
+    end if
+  end function require_retired_handle_capacity
 
   integer(i32) function validate_modal_input_descriptor_c(input) result(status_code)
     type(c_modal_input_desc), intent(in) :: input

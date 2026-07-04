@@ -1,6 +1,6 @@
 # Mizu Safety Audit
 
-Last reviewed: July 3, 2026
+Last reviewed: July 4, 2026
 
 This document records the current safety posture for the repo's active runtime,
 bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
@@ -40,6 +40,11 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
 - Slot reuse clears the active pointer and retires the wrapper box without
   freeing it, so stale caller pointers cannot alias a later live handle after
   allocator reuse and therefore fail closed as `MIZU_STATUS_INVALID_ARGUMENT`.
+- Those retired wrapper boxes now live in a bounded process-lifetime arena
+  capped at `4096` retired runtime boxes, `4096` retired model boxes, and
+  `4096` retired session boxes. Once a per-kind cap is reached, new
+  create/open calls fail closed as `MIZU_STATUS_BUSY` instead of growing heap
+  usage without bound.
 
 ### Bridge Boundaries
 
@@ -63,18 +68,29 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
 
 ## Measured Validation
 
-- `make test`
-- [tests/contract/test_handle_lifecycle.c](../tests/contract/test_handle_lifecycle.c)
-- [tests/contract/test_stage_reports.c](../tests/contract/test_stage_reports.c)
-- [tests/unit/test_runtime_workspace.f90](../tests/unit/test_runtime_workspace.f90)
-- [tests/unit/test_session_staging.f90](../tests/unit/test_session_staging.f90)
+- `make check-local`
+- `make check-local` currently runs:
+  - `./scripts/format-local.sh --all --check`
+  - `git diff --check`
+  - `make test`
+  - [tests/tooling/test_format_local.py](../tests/tooling/test_format_local.py)
+  - [tests/tooling/test_gguf_to_mizu.py](../tests/tooling/test_gguf_to_mizu.py)
+  - [tests/tooling/test_hf_safetensors_to_mizu.py](../tests/tooling/test_hf_safetensors_to_mizu.py)
+- The contract and unit coverage exercised in this pass includes:
+  - [tests/contract/test_handle_lifecycle.c](../tests/contract/test_handle_lifecycle.c)
+  - [tests/contract/test_modal_input_validation.c](../tests/contract/test_modal_input_validation.c)
+  - [tests/contract/test_struct_sizes.c](../tests/contract/test_struct_sizes.c)
+  - [tests/contract/test_stage_reports.c](../tests/contract/test_stage_reports.c)
+  - [tests/unit/test_runtime_workspace.f90](../tests/unit/test_runtime_workspace.f90)
+  - [tests/unit/test_session_staging.f90](../tests/unit/test_session_staging.f90)
 
 ## Approved Exceptions
 
 - Opaque-handle wrapper boxes are intentionally retained until process exit
-  after close or destroy. This trades a tiny amount of per-handle memory for a
-  fail-closed stale-handle contract that avoids use-after-free and allocator
-  address-reuse ABA problems at the C ABI boundary.
+  after close or destroy, but now only inside the bounded per-kind arena above.
+  This preserves the fail-closed stale-handle contract that avoids
+  use-after-free and allocator address-reuse ABA problems at the C ABI
+  boundary while preventing unbounded retained-handle growth.
 
 ## Open Questions
 

@@ -105,6 +105,7 @@ int main(void) {
     mizu_modal_input_desc_t modal_input;
     mizu_decode_options_t decode_options;
     mizu_decode_result_t decode_result;
+    size_t report_index;
 
     memset(prefill_reports, 0, sizeof(prefill_reports));
     memset(prefill_reports_cached, 0, sizeof(prefill_reports_cached));
@@ -121,6 +122,17 @@ int main(void) {
     memset(persist_prefill_reports_reuse, 0, sizeof(persist_prefill_reports_reuse));
     memset(persist_decode_reports, 0, sizeof(persist_decode_reports));
     memset(persist_decode_reports_reuse, 0, sizeof(persist_decode_reports_reuse));
+
+    for (report_index = 0; report_index < 2; ++report_index) {
+        model_reports[report_index].struct_size = sizeof(model_reports[report_index]);
+    }
+    fresh_model_report.struct_size = sizeof(fresh_model_report);
+    for (report_index = 0; report_index < 3; ++report_index) {
+        explore_reports[report_index].struct_size = sizeof(explore_reports[report_index]);
+    }
+    for (report_index = 0; report_index < 4; ++report_index) {
+        persist_reports[report_index].struct_size = sizeof(persist_reports[report_index]);
+    }
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE\n");

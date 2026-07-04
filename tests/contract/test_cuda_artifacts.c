@@ -363,6 +363,12 @@ int main(void) {
     memset(&session_info, 0, sizeof(session_info));
     memset(&session_info_warm, 0, sizeof(session_info_warm));
     memset(&session_info_fallback, 0, sizeof(session_info_fallback));
+    model_report.struct_size = sizeof(model_report);
+    model_report_warm.struct_size = sizeof(model_report_warm);
+    model_report_fallback.struct_size = sizeof(model_report_fallback);
+    session_info.struct_size = sizeof(session_info);
+    session_info_warm.struct_size = sizeof(session_info_warm);
+    session_info_fallback.struct_size = sizeof(session_info_fallback);
 
     command_status = system("rm -rf /tmp/mizu_cuda_artifacts && mkdir -p /tmp/mizu_cuda_artifacts");
     if (!expect_true("cuda persist root setup should succeed", command_status == 0)) return 1;

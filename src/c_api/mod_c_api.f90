@@ -266,6 +266,7 @@ contains
     type(runtime_box), pointer      :: box
     type(runtime_config)            :: config
     type(runtime_backend_registry)  :: backend_registry
+    integer(i32)                    :: status_code
     integer(i64)                    :: slot_id
 
     out_runtime_ptr = c_null_ptr
@@ -278,6 +279,12 @@ contains
     call c_f_pointer(config_ptr, c_config)
     if (.not. associated(c_config)) then
       mizu_runtime_create = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_input_struct_size(c_config%struct_size, c_sizeof(c_config))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_runtime_create = int(status_code, kind=c_int32_t)
       return
     end if
 
@@ -416,6 +423,13 @@ contains
       return
     end if
 
+    status_code = require_input_struct_size(c_config%struct_size, c_sizeof(c_config))
+    if (status_code /= MIZU_STATUS_OK) then
+      call set_runtime_error(runtime, status_code, "model config struct_size is too small")
+      mizu_model_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     if (int(c_config%abi_version, kind=i32) /= MIZU_ABI_VERSION) then
       call set_runtime_error(runtime, MIZU_STATUS_ABI_MISMATCH, "model config ABI version mismatch")
       mizu_model_open = int(MIZU_STATUS_ABI_MISMATCH, kind=c_int32_t)
@@ -535,6 +549,12 @@ contains
       return
     end if
 
+    status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_model_get_info = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     c_info%model_family         = int(model%info%model_family, kind=c_int32_t)
     c_info%allowed_backend_mask = int(model%info%allowed_backend_mask, kind=c_int64_t)
     c_info%model_features       = int(model%info%model_features, kind=c_int64_t)
@@ -567,6 +587,12 @@ contains
     call c_f_pointer(out_report_ptr, c_report)
     if (.not. associated(c_report)) then
       mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_model_get_last_report = int(status_code, kind=c_int32_t)
       return
     end if
 
@@ -603,6 +629,12 @@ contains
     call c_f_pointer(config_ptr, c_config)
     if (.not. associated(c_config)) then
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_input_struct_size(c_config%struct_size, c_sizeof(c_config))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_open = int(status_code, kind=c_int32_t)
       return
     end if
 
@@ -848,6 +880,12 @@ contains
       return
     end if
 
+    status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_get_info = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     info = build_session_info(session)
     c_info%session_state_flags = int(info%session_state_flags, kind=c_int64_t)
     c_info%kv_token_count      = int(info%kv_token_count, kind=c_int64_t)
@@ -919,6 +957,12 @@ contains
     call c_f_pointer(input_ptr, input)
     if (.not. associated(input)) then
       mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_input_struct_size(input%struct_size, c_sizeof(input))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
       return
     end if
 
@@ -1296,6 +1340,17 @@ contains
       return
     end if
 
+    status_code = require_input_struct_size(options%struct_size, c_sizeof(options))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
+    status_code = require_output_struct_size(result%struct_size, c_sizeof(result))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
@@ -1437,6 +1492,12 @@ contains
       return
     end if
 
+    status_code = require_output_struct_size(output%struct_size, c_sizeof(output))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_read_output = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     status_code = validate_read_output(session)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_read_output = int(status_code, kind=c_int32_t)
@@ -1493,6 +1554,12 @@ contains
     call c_f_pointer(out_report_ptr, c_report)
     if (.not. associated(c_report)) then
       mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_get_last_report = int(status_code, kind=c_int32_t)
       return
     end if
 
@@ -5917,6 +5984,22 @@ contains
     end if
   end subroutine write_size_t_pointer
 
+  pure integer(i32) function require_input_struct_size(actual_size, expected_size) result(status_code)
+    integer(c_size_t), intent(in) :: actual_size
+    integer(c_size_t), intent(in) :: expected_size
+
+    status_code = MIZU_STATUS_OK
+    if (actual_size < expected_size) status_code = MIZU_STATUS_ABI_MISMATCH
+  end function require_input_struct_size
+
+  pure integer(i32) function require_output_struct_size(actual_size, expected_size) result(status_code)
+    integer(c_size_t), intent(in) :: actual_size
+    integer(c_size_t), intent(in) :: expected_size
+
+    status_code = MIZU_STATUS_OK
+    if (actual_size < expected_size) status_code = MIZU_STATUS_BUFFER_TOO_SMALL
+  end function require_output_struct_size
+
   pure function make_stage_report(stage_kind, backend_family, execution_route, fallback_reason, &
                                   selection_mode, cold_state, cache_flags, plan_id, elapsed_us) &
       result(report)
@@ -5970,6 +6053,9 @@ contains
       status_code = MIZU_STATUS_INVALID_ARGUMENT
       return
     end if
+
+    status_code = require_output_struct_size(report_buffer%struct_size, c_sizeof(report_buffer))
+    if (status_code /= MIZU_STATUS_OK) return
 
     report_buffer%report_count = int(required_count, kind=c_size_t)
     if (report_buffer%report_capacity < int(required_count, kind=c_size_t)) then

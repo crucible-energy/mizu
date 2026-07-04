@@ -77,6 +77,7 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
   - [tests/tooling/test_gguf_to_mizu.py](../tests/tooling/test_gguf_to_mizu.py)
   - [tests/tooling/test_hf_safetensors_to_mizu.py](../tests/tooling/test_hf_safetensors_to_mizu.py)
 - The contract and unit coverage exercised in this pass includes:
+  - [tests/contract/test_handle_arena_capacity.c](../tests/contract/test_handle_arena_capacity.c)
   - [tests/contract/test_handle_lifecycle.c](../tests/contract/test_handle_lifecycle.c)
   - [tests/contract/test_modal_input_validation.c](../tests/contract/test_modal_input_validation.c)
   - [tests/contract/test_struct_sizes.c](../tests/contract/test_struct_sizes.c)

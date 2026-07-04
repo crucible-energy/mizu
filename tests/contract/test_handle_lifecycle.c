@@ -80,6 +80,11 @@ int main(void) {
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
 
+    status = mizu_model_close(model);
+    if (!expect_status("model close with live session", status, MIZU_STATUS_BUSY)) return 1;
+    status = mizu_runtime_destroy(runtime);
+    if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
+
     session_info.struct_size = sizeof(session_info);
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

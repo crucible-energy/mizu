@@ -159,6 +159,11 @@ These suites cover the `API-C*` portion of
   - verifies the runtime surfaces an eviction-specific last-error string
   - verifies forced eviction preserves the parked bit while clearing live
     context visibility and KV token count
+- `test_decode_terminal_status.c`
+  - drives a session to its configured context limit through the public API
+  - verifies the final decode returns `MIZU_STATUS_END_OF_SEQUENCE`
+  - verifies terminal decode surfaces a stable stop reason and emitted token
+  - verifies repeated decode after exhaustion stays terminal without growing KV
 - `test_qwench_gguf_cuda_smoke.c`
   - skips cleanly when `~/.qwench/models` does not contain the expected local
     GGUF assets

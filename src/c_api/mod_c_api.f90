@@ -1347,6 +1347,7 @@ contains
     integer(i32) :: status_code
     integer(i64) :: emitted_token_count
     integer(i64) :: kv_before
+    integer(i64) :: remaining_context_tokens
     integer(i64) :: decode_cache_flags
     integer(i64) :: decode_plan_id
     integer(i64) :: decode_elapsed_us
@@ -1361,6 +1362,8 @@ contains
     integer(i32) :: emitted_tokens_local(MAX_RECENT_OUTPUT_TOKENS)
     character(len=MAX_CACHE_KEY_LEN) :: decode_optimization_key_text
     character(len=MAX_CACHE_KEY_LEN) :: decode_candidate_key_text
+    logical      :: decode_progressed
+    logical      :: terminal_decode
     logical      :: decode_workspace_reserved
     type(artifact_metadata_record) :: decode_artifact_metadata
 
@@ -1432,6 +1435,17 @@ contains
     end if
 
     kv_before = session%kv_token_count
+    remaining_context_tokens = 1_i64
+    if (session%config%max_context_tokens > 0_i64) then
+      remaining_context_tokens = session%config%max_context_tokens - kv_before
+      if (remaining_context_tokens <= 0_i64) then
+        result%token_count = 0_c_size_t
+        result%stop_reason = int(MIZU_STOP_REASON_TOKEN_BUDGET, kind=c_int32_t)
+        result%result_flags = 0_c_int64_t
+        mizu_session_decode_step = int(MIZU_STATUS_END_OF_SEQUENCE, kind=c_int32_t)
+        return
+      end if
+    end if
     emitted_tokens_local = 0_i32
     updated_context_byte_count = 0_i32
     updated_context_bytes = 0_i8
@@ -1458,10 +1472,14 @@ contains
 
     stage_started_us = monotonic_timestamp_us()
     emitted_token_count = min(int(options%token_budget, kind=i64), 1_i64)
+    if (session%config%max_context_tokens > 0_i64) then
+      emitted_token_count = min(emitted_token_count, remaining_context_tokens)
+    end if
     decode_stop_reason = MIZU_STOP_REASON_NONE
     token_value = int(mod(session%kv_token_count, 4096_i64), kind=c_int32_t)
     if (token_value == 0_c_int32_t) token_value = 1_c_int32_t
-    if (report_backend_family == MIZU_BACKEND_FAMILY_APPLE .and. &
+    decode_progressed = (emitted_token_count > 0_i64)
+    if (decode_progressed .and. report_backend_family == MIZU_BACKEND_FAMILY_APPLE .and. &
         (report_route == MIZU_EXEC_ROUTE_ANE .or. report_route == MIZU_EXEC_ROUTE_METAL)) then
       call execute_apple_decode(runtime%config%cache_root, trim(decode_artifact_metadata%payload_path), &
         report_route, kv_before, int(options%token_budget, kind=i64), emitted_token_count, token_value, &
@@ -1473,7 +1491,8 @@ contains
         mizu_session_decode_step = int(status_code, kind=c_int32_t)
         return
       end if
-    else if (report_backend_family == MIZU_BACKEND_FAMILY_CUDA .and. report_route == MIZU_EXEC_ROUTE_CUDA) then
+    else if (decode_progressed .and. report_backend_family == MIZU_BACKEND_FAMILY_CUDA .and. &
+             report_route == MIZU_EXEC_ROUTE_CUDA) then
       call execute_cuda_decode(runtime%config%cache_root, trim(decode_artifact_metadata%payload_path), &
         kv_before, int(options%token_budget, kind=i64), emitted_token_count, token_value, &
         decode_stop_reason, status_code, runtime%workspace%host_buffer, runtime%workspace%bytes_in_use, &
@@ -1486,6 +1505,12 @@ contains
       end if
     end if
     call release_stage_workspace(runtime, decode_workspace_reserved)
+    if (decode_progressed .and. session%config%max_context_tokens > 0_i64) then
+      if (kv_before + emitted_token_count >= session%config%max_context_tokens) then
+        decode_stop_reason = MIZU_STOP_REASON_TOKEN_BUDGET
+      end if
+    end if
+    terminal_decode = (decode_stop_reason /= MIZU_STOP_REASON_NONE)
 
     result%token_count  = int(emitted_token_count, kind=c_size_t)
     result%stop_reason  = int(decode_stop_reason, kind=c_int32_t)
@@ -1507,9 +1532,9 @@ contains
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
-    if ((report_backend_family == MIZU_BACKEND_FAMILY_APPLE .and. &
+    if (decode_progressed .and. ((report_backend_family == MIZU_BACKEND_FAMILY_APPLE .and. &
          (report_route == MIZU_EXEC_ROUTE_ANE .or. report_route == MIZU_EXEC_ROUTE_METAL)) .or. &
-        (report_backend_family == MIZU_BACKEND_FAMILY_CUDA .and. report_route == MIZU_EXEC_ROUTE_CUDA)) then
+        (report_backend_family == MIZU_BACKEND_FAMILY_CUDA .and. report_route == MIZU_EXEC_ROUTE_CUDA))) then
       call update_live_context_record(session, updated_context_bytes, updated_context_byte_count, &
         producer_stage=MIZU_STAGE_DECODE, artifact_hash=decode_context_artifact_hash, &
         backend_family=report_backend_family, execution_route=report_route)
@@ -1529,7 +1554,11 @@ contains
       decode_cache_flags, decode_plan_id, decode_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
 
-    mizu_session_decode_step = int(MIZU_STATUS_OK, kind=c_int32_t)
+    if (terminal_decode) then
+      mizu_session_decode_step = int(MIZU_STATUS_END_OF_SEQUENCE, kind=c_int32_t)
+    else
+      mizu_session_decode_step = int(MIZU_STATUS_OK, kind=c_int32_t)
+    end if
   end function mizu_session_decode_step
 
   integer(c_int32_t) function mizu_session_read_output(session_ptr, out_output_ptr) &

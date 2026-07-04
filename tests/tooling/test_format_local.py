@@ -60,6 +60,7 @@ def main() -> int:
         )
 
         run(["git", "commit", "-qm", "baseline"], cwd=repo_root)
+        run(["bash", str(FORMATTER), "--staged", "--write", "--restage"], cwd=repo_root)
 
         staged_partial_path = repo_root / "staged_partial.txt"
         staged_partial_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")

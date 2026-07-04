@@ -168,6 +168,10 @@ if [ "$restage" -eq 1 ]; then
   done < <(unstaged_files)
 fi
 
+if [ "${#files[@]}" -eq 0 ]; then
+  exit 0
+fi
+
 failed=0
 
 for file in "${files[@]}"; do

@@ -113,11 +113,15 @@ int main(void) {
     model_info.struct_size = sizeof(model_info) - 1;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("model info should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    status = mizu_model_get_info(model, NULL);
+    if (!expect_status("model info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     memset(&report, 0, sizeof(report));
     report.struct_size = sizeof(report) - 1;
     status = mizu_model_get_last_report(model, &report);
     if (!expect_status("model report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    status = mizu_model_get_last_report(model, NULL);
+    if (!expect_status("model report should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     memset(&report, 0, sizeof(report));
     report.struct_size = sizeof(report);
@@ -131,6 +135,8 @@ int main(void) {
     session_info.struct_size = sizeof(session_info) - 1;
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    status = mizu_session_get_info(session, NULL);
+    if (!expect_status("session info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     memset(&modal_input, 0, sizeof(modal_input));
     modal_input.struct_size = sizeof(modal_input) - 1;
@@ -146,6 +152,13 @@ int main(void) {
 
     status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens for prefill", status, MIZU_STATUS_OK)) return 1;
+
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.report_capacity = 1;
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should reject missing report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("prefill should still report required count when storage is missing", report_buffer.report_count == 1)) return 1;
 
     memset(&report_buffer, 0, sizeof(report_buffer));
     report_buffer.struct_size = sizeof(report_buffer);
@@ -191,6 +204,13 @@ int main(void) {
     if (!expect_status("decode should reject undersized token buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("decode should report required token count", decode_result.token_count == 1)) return 1;
 
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_capacity = 1;
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+    if (!expect_status("decode should reject missing token storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("decode should preserve required token count when storage is missing", decode_result.token_count == 1)) return 1;
+
     memset(&session_info, 0, sizeof(session_info));
     session_info.struct_size = sizeof(session_info);
     status = mizu_session_get_info(session, &session_info);
@@ -232,10 +252,21 @@ int main(void) {
     if (!expect_status("read output should reject undersized byte buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("read output should report required byte count", output_buffer.bytes_written == sizeof(int32_t))) return 1;
 
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.byte_capacity = sizeof(int32_t);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output should reject missing byte storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("read output should preserve required byte count when storage is missing",
+                     output_buffer.bytes_written == sizeof(int32_t))) return 1;
+
     memset(&report, 0, sizeof(report));
     report.struct_size = sizeof(report) - 1;
     status = mizu_session_get_last_report(session, &report);
     if (!expect_status("session report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    status = mizu_session_get_last_report(session, NULL);
+    if (!expect_status("session report should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

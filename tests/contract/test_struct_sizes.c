@@ -191,6 +191,18 @@ int main(void) {
     if (!expect_status("decode should reject undersized token buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("decode should report required token count", decode_result.token_count == 1)) return 1;
 
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after failed decode", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("failed decode should not advance kv tokens", session_info.kv_token_count == 1)) return 1;
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("failed decode should not publish output", status, MIZU_STATUS_INVALID_STATE)) return 1;
+
     {
         int32_t decoded_token = 0;
         memset(&decode_result, 0, sizeof(decode_result));
@@ -200,6 +212,12 @@ int main(void) {
         status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
         if (!expect_status("decode should succeed with one token slot", status, MIZU_STATUS_OK)) return 1;
     }
+
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after successful decode", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("successful decode should advance kv tokens", session_info.kv_token_count == 2)) return 1;
 
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer) - 1;

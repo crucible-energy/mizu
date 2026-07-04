@@ -9,6 +9,7 @@ Core planning documents live here.
 - [Task List](./TASK_LIST.md)
 - [Current State](./CURRENT_STATE.md)
 - [Importer Layout](./IMPORTER_LAYOUT.md)
+- [Safety Audit](./SAFETY_AUDIT.md)
 - [Placeholder Runtime Status](./PLACEHOLDER_RUNTIME_STATUS.md)
 - [Apple Validation Checklist](./APPLE_VALIDATION_CHECKLIST.md)
 

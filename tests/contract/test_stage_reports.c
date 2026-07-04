@@ -105,6 +105,7 @@ int main(void) {
     mizu_modal_input_desc_t modal_input;
     mizu_decode_options_t decode_options;
     mizu_decode_result_t decode_result;
+    size_t report_index;
 
     memset(prefill_reports, 0, sizeof(prefill_reports));
     memset(prefill_reports_cached, 0, sizeof(prefill_reports_cached));
@@ -121,6 +122,17 @@ int main(void) {
     memset(persist_prefill_reports_reuse, 0, sizeof(persist_prefill_reports_reuse));
     memset(persist_decode_reports, 0, sizeof(persist_decode_reports));
     memset(persist_decode_reports_reuse, 0, sizeof(persist_decode_reports_reuse));
+
+    for (report_index = 0; report_index < 2; ++report_index) {
+        model_reports[report_index].struct_size = sizeof(model_reports[report_index]);
+    }
+    fresh_model_report.struct_size = sizeof(fresh_model_report);
+    for (report_index = 0; report_index < 3; ++report_index) {
+        explore_reports[report_index].struct_size = sizeof(explore_reports[report_index]);
+    }
+    for (report_index = 0; report_index < 4; ++report_index) {
+        persist_reports[report_index].struct_size = sizeof(persist_reports[report_index]);
+    }
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE\n");
@@ -202,12 +214,20 @@ int main(void) {
 
     prefill_buffer.struct_size = sizeof(prefill_buffer);
     prefill_buffer.reports = prefill_reports;
-    prefill_buffer.report_capacity = 2;
+    prefill_buffer.report_capacity = 1;
     prefill_buffer.report_count = 0;
 
     status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill should reject undersized multimodal report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("prefill should report two required stages", prefill_buffer.report_count == 2)) return 1;
+
+    prefill_buffer.report_capacity = 2;
+    prefill_buffer.report_count = 0;
+    status = mizu_session_prefill(session, &prefill_buffer);
     if (!expect_status("prefill", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("prefill report count should be 2", prefill_buffer.report_count == 2)) return 1;
+    if (!expect_true("projector report should stamp struct_size", prefill_reports[0].struct_size == sizeof(prefill_reports[0]))) return 1;
+    if (!expect_true("prefill report should stamp struct_size", prefill_reports[1].struct_size == sizeof(prefill_reports[1]))) return 1;
     if (!expect_true("first prefill report should be projector", prefill_reports[0].stage_kind == MIZU_STAGE_PROJECTOR)) return 1;
     if (!expect_true("second prefill report should be prefill", prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) return 1;
     if (!expect_true("projector plan id should be nonzero", prefill_reports[0].plan_id != 0)) return 1;
@@ -216,6 +236,9 @@ int main(void) {
     if (!expect_true("prefill should report elapsed time", prefill_reports[1].elapsed_us > 0)) return 1;
     if (!expect_true("first projector should be multimodal cache miss", (prefill_reports[0].cache_flags & MIZU_CACHE_FLAG_MM_HIT) == 0)) return 1;
     if (!expect_true("first prefill should be plan cache miss", (prefill_reports[1].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) == 0)) return 1;
+    status = mizu_session_get_last_report(session, &prefill_reports[1]);
+    if (!expect_status("prefill report entry should be reusable with get_last_report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("reused prefill report entry should stay prefill", prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) return 1;
 
     decode_options.struct_size = sizeof(decode_options);
     decode_options.token_budget = 1;

@@ -46,6 +46,7 @@ int main(void) {
     mizu_decode_result_t decode_result;
     mizu_output_buffer_t output_buffer;
     mizu_execution_report_t report_storage[2];
+    const int32_t prefill_tokens[] = { 17 };
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE=1\n");
@@ -142,6 +143,21 @@ int main(void) {
     report_buffer.report_capacity = 2;
     status = mizu_session_prefill(session, &report_buffer);
     if (!expect_status("prefill should reject short report buffer struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+
+    status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens for prefill", status, MIZU_STATUS_OK)) return 1;
+
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 2;
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should accept zeroed report entries", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("prefill should report one stage", report_buffer.report_count == 1)) return 1;
+    if (!expect_true("prefill should stamp buffered report struct_size", report_storage[0].struct_size == sizeof(report_storage[0]))) return 1;
+    status = mizu_session_get_last_report(session, &report_storage[0]);
+    if (!expect_status("session report should allow buffered report reuse", status, MIZU_STATUS_OK)) return 1;
 
     memset(&decode_options, 0, sizeof(decode_options));
     decode_options.struct_size = sizeof(decode_options) - 1;

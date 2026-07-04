@@ -6110,6 +6110,7 @@ contains
     integer(c_size_t)                       :: struct_size
 
     struct_size = c_report%struct_size
+    if (struct_size == 0_c_size_t) struct_size = c_sizeof(c_report)
     c_report%stage_kind      = int(report%stage_kind, kind=c_int32_t)
     c_report%backend_family  = int(report%backend_family, kind=c_int32_t)
     c_report%execution_route = int(report%execution_route, kind=c_int32_t)

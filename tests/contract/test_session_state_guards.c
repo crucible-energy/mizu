@@ -46,6 +46,7 @@ int main(void) {
     mizu_decode_result_t decode_result;
     mizu_output_buffer_t output_buffer;
     mizu_session_info_t session_info;
+    mizu_execution_report_t last_report;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE=1\n");
@@ -103,6 +104,7 @@ int main(void) {
     memset(&decode_result, 0, sizeof(decode_result));
     memset(&output_buffer, 0, sizeof(output_buffer));
     memset(&session_info, 0, sizeof(session_info));
+    memset(&last_report, 0, sizeof(last_report));
 
     prefill_buffer.struct_size = sizeof(prefill_buffer);
     prefill_buffer.reports = prefill_reports;
@@ -183,6 +185,11 @@ int main(void) {
     if (!expect_true("prefill should clear parked flag",
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) == 0)) return 1;
     if (!expect_true("prefill should advance kv tokens", session_info.kv_token_count == 3)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after prefill", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("last report after prefill should be prefill",
+                     last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
 
     park_buffer.struct_size = sizeof(park_buffer) - 1;
     status = mizu_session_park(session, &park_buffer);
@@ -204,9 +211,19 @@ int main(void) {
     if (!expect_true("rejected park outputs should not set parked flag",
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) == 0)) return 1;
     if (!expect_true("rejected park outputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after rejected park outputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("rejected park outputs should preserve prefill last report",
+                     last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
 
     status = mizu_session_park(session, NULL);
     if (!expect_status("park should allow null report buffer", status, MIZU_STATUS_OK)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after null-buffer park", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("last report after null-buffer park should be park",
+                     last_report.stage_kind == MIZU_STAGE_PARK)) return 1;
 
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info after park", status, MIZU_STATUS_OK)) return 1;
@@ -253,9 +270,19 @@ int main(void) {
     if (!expect_true("rejected resume outputs should preserve live context flag",
                      (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
     if (!expect_true("rejected resume outputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after rejected resume outputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("rejected resume outputs should preserve park last report",
+                     last_report.stage_kind == MIZU_STAGE_PARK)) return 1;
 
     status = mizu_session_resume(session, NULL);
     if (!expect_status("resume should allow null report buffer", status, MIZU_STATUS_OK)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after null-buffer resume", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("last report after null-buffer resume should be resume",
+                     last_report.stage_kind == MIZU_STAGE_RESUME)) return 1;
 
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info after resume", status, MIZU_STATUS_OK)) return 1;

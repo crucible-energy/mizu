@@ -48,6 +48,7 @@ int main(void) {
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
     mizu_output_buffer_t output_buffer;
+    mizu_execution_report_t model_report;
     mizu_execution_report_t resume_reports[1];
     mizu_report_buffer_t resume_buffer;
 
@@ -85,6 +86,12 @@ int main(void) {
 
     status = mizu_model_open(runtime, &model_config, &model);
     if (!expect_status("model open", status, MIZU_STATUS_OK)) return 1;
+    memset(&model_report, 0, sizeof(model_report));
+    model_report.struct_size = sizeof(model_report);
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("model report after open", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("model report after open should be model load",
+                     model_report.stage_kind == MIZU_STAGE_MODEL_LOAD)) return 1;
 
     memset(&session_config, 0, sizeof(session_config));
     session_config.struct_size = sizeof(session_config);
@@ -103,6 +110,11 @@ int main(void) {
     if (!expect_true("model-close failure should publish non-empty runtime error", required_bytes > 1)) return 1;
     if (!expect_true("model-close failure should explain live sessions",
                      strstr(error_buffer, "model cannot close while sessions are live") != NULL)) return 1;
+    model_report.struct_size = sizeof(model_report);
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("model report after failed close", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("failed model close should preserve model-load report",
+                     model_report.stage_kind == MIZU_STAGE_MODEL_LOAD)) return 1;
 
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
@@ -124,6 +136,11 @@ int main(void) {
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
     if (!expect_true("resume failure should replace earlier error text",
                      strstr(error_buffer, "session cannot resume in current state") != NULL)) return 1;
+    model_report.struct_size = sizeof(model_report);
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("model report after session failures", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("session failures should not mutate model last report",
+                     model_report.stage_kind == MIZU_STAGE_MODEL_LOAD)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

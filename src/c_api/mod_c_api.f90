@@ -527,6 +527,11 @@ contains
 
     status_code = validate_model_close(model)
     if (status_code /= MIZU_STATUS_OK) then
+      if (status_code == MIZU_STATUS_BUSY) then
+        call set_model_owner_runtime_error(model, status_code, "model cannot close while sessions are live")
+      else
+        call set_model_owner_runtime_error(model, status_code, "model cannot close in current state")
+      end if
       mizu_model_close = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1558,6 +1563,7 @@ contains
 
     status_code = validate_read_output(session)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session has no decode output to read")
       mizu_session_read_output = int(status_code, kind=c_int32_t)
       return
     end if
@@ -2093,6 +2099,32 @@ contains
     optimization_store => runtime_optimization_registry(runtime_id)
     status_code = MIZU_STATUS_OK
   end subroutine resolve_model_owner_optimizer
+
+  subroutine set_model_owner_runtime_error(model, status_code, message)
+    type(model_state), intent(in)       :: model
+    integer(i32), intent(in)            :: status_code
+    character(len=*), intent(in)        :: message
+    type(runtime_state), pointer        :: runtime
+    integer(i32)                        :: owner_status
+
+    call resolve_model_owner_runtime(model, runtime, owner_status)
+    if (owner_status /= MIZU_STATUS_OK) return
+
+    call set_runtime_error(runtime, status_code, message)
+  end subroutine set_model_owner_runtime_error
+
+  subroutine set_session_owner_runtime_error(session, status_code, message)
+    type(session_state), intent(in)     :: session
+    integer(i32), intent(in)            :: status_code
+    character(len=*), intent(in)        :: message
+    type(model_state), pointer          :: model
+    integer(i32)                        :: owner_status
+
+    call resolve_session_owner_model(session, model, owner_status)
+    if (owner_status /= MIZU_STATUS_OK) return
+
+    call set_model_owner_runtime_error(model, status_code, message)
+  end subroutine set_session_owner_runtime_error
 
   pure subroutine populate_manifest_identity(model, manifest)
     type(model_state), intent(in)   :: model

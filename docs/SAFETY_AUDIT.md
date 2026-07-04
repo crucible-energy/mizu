@@ -82,6 +82,7 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
   - [tests/contract/test_modal_input_validation.c](../tests/contract/test_modal_input_validation.c)
   - [tests/contract/test_session_checkpoint_restore_failures.c](../tests/contract/test_session_checkpoint_restore_failures.c)
   - [tests/contract/test_session_state_guards.c](../tests/contract/test_session_state_guards.c)
+  - [tests/contract/test_runtime_last_error_propagation.c](../tests/contract/test_runtime_last_error_propagation.c)
   - [tests/contract/test_struct_sizes.c](../tests/contract/test_struct_sizes.c)
   - [tests/contract/test_stage_reports.c](../tests/contract/test_stage_reports.c)
   - [tests/unit/test_runtime_workspace.f90](../tests/unit/test_runtime_workspace.f90)

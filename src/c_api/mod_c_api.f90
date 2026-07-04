@@ -66,6 +66,7 @@ module mod_c_api
                                      save_runtime_optimization_store
   use mod_backend_registry, only: runtime_backend_registry, initialize_runtime_backend_registry, &
                                   probe_runtime_backend_registry, apply_backend_registry_to_runtime
+  use mod_backend_probe_support, only: read_boolean_env_override
   use mod_backend_contract, only: plan_request, planner_result, initialize_plan_request, &
                                   planner_result_is_success, OP_FAMILY_NONE, OP_FAMILY_PROJECTOR, &
                                   OP_FAMILY_PREFILL, OP_FAMILY_DECODE
@@ -807,6 +808,7 @@ contains
       MIZU_FALLBACK_REASON_NONE, selection_mode, MIZU_COLD_STATE_WARM, &
       cache_flags, stage_plan_id, stage_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
+    if (checkpoint_offloaded .and. force_session_eviction_requested()) call evict_parked_session(session)
 
     mizu_session_park = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_session_park
@@ -866,7 +868,11 @@ contains
 
     status_code = validate_resume(session)
     if (status_code /= MIZU_STATUS_OK) then
-      call set_runtime_error(runtime, status_code, "session cannot resume in current state")
+      if (status_code == MIZU_STATUS_SESSION_EVICTED) then
+        call set_runtime_error(runtime, status_code, "session parked state was evicted")
+      else
+        call set_runtime_error(runtime, status_code, "session cannot resume in current state")
+      end if
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
@@ -5679,6 +5685,13 @@ contains
     finished_us = monotonic_timestamp_us()
     elapsed_us = max(1_i64, finished_us - started_us)
   end function elapsed_since_us
+
+  logical function force_session_eviction_requested() result(is_forced)
+    logical :: has_override
+
+    call read_boolean_env_override("MIZU_FORCE_SESSION_EVICTION", has_override, is_forced)
+    if (.not. has_override) is_forced = .false.
+  end function force_session_eviction_requested
 
   subroutine hydrate_runtime_cache_state(runtime, runtime_cache)
     type(runtime_state), intent(in)          :: runtime

@@ -153,6 +153,12 @@ These suites cover the `API-C*` portion of
     execution falls back from richer tile/page cache shapes to leaner binary
     sidecars, because the CUDA bridge now derives staged execution from the
     resolved binary pack record in a canonical material-source order
+- `test_session_eviction.c`
+  - forces a parked-session eviction injector through the public API seam
+  - verifies `resume` returns `MIZU_STATUS_SESSION_EVICTED`
+  - verifies the runtime surfaces an eviction-specific last-error string
+  - verifies forced eviction preserves the parked bit while clearing live
+    context visibility and KV token count
 - `test_qwench_gguf_cuda_smoke.c`
   - skips cleanly when `~/.qwench/models` does not contain the expected local
     GGUF assets

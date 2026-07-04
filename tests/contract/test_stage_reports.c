@@ -226,6 +226,8 @@ int main(void) {
     status = mizu_session_prefill(session, &prefill_buffer);
     if (!expect_status("prefill", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("prefill report count should be 2", prefill_buffer.report_count == 2)) return 1;
+    if (!expect_true("projector report should stamp struct_size", prefill_reports[0].struct_size == sizeof(prefill_reports[0]))) return 1;
+    if (!expect_true("prefill report should stamp struct_size", prefill_reports[1].struct_size == sizeof(prefill_reports[1]))) return 1;
     if (!expect_true("first prefill report should be projector", prefill_reports[0].stage_kind == MIZU_STAGE_PROJECTOR)) return 1;
     if (!expect_true("second prefill report should be prefill", prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) return 1;
     if (!expect_true("projector plan id should be nonzero", prefill_reports[0].plan_id != 0)) return 1;
@@ -234,6 +236,9 @@ int main(void) {
     if (!expect_true("prefill should report elapsed time", prefill_reports[1].elapsed_us > 0)) return 1;
     if (!expect_true("first projector should be multimodal cache miss", (prefill_reports[0].cache_flags & MIZU_CACHE_FLAG_MM_HIT) == 0)) return 1;
     if (!expect_true("first prefill should be plan cache miss", (prefill_reports[1].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) == 0)) return 1;
+    status = mizu_session_get_last_report(session, &prefill_reports[1]);
+    if (!expect_status("prefill report entry should be reusable with get_last_report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("reused prefill report entry should stay prefill", prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) return 1;
 
     decode_options.struct_size = sizeof(decode_options);
     decode_options.token_budget = 1;

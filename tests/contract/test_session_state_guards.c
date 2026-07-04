@@ -184,8 +184,29 @@ int main(void) {
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) == 0)) return 1;
     if (!expect_true("prefill should advance kv tokens", session_info.kv_token_count == 3)) return 1;
 
+    park_buffer.struct_size = sizeof(park_buffer) - 1;
     status = mizu_session_park(session, &park_buffer);
-    if (!expect_status("park with live context", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_status("park should reject short report buffer struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+
+    park_buffer.struct_size = sizeof(park_buffer);
+    park_buffer.reports = NULL;
+    park_buffer.report_capacity = 1;
+    park_buffer.report_count = 0;
+    status = mizu_session_park(session, &park_buffer);
+    if (!expect_status("park should reject missing report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("park should still report required count when storage is missing",
+                     park_buffer.report_count == 1)) return 1;
+
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after rejected park outputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("rejected park outputs should preserve live context",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+    if (!expect_true("rejected park outputs should not set parked flag",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) == 0)) return 1;
+    if (!expect_true("rejected park outputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+
+    status = mizu_session_park(session, NULL);
+    if (!expect_status("park should allow null report buffer", status, MIZU_STATUS_OK)) return 1;
 
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info after park", status, MIZU_STATUS_OK)) return 1;
@@ -212,8 +233,29 @@ int main(void) {
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) != 0)) return 1;
     if (!expect_true("parked invalid ops should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
 
+    resume_buffer.struct_size = sizeof(resume_buffer) - 1;
     status = mizu_session_resume(session, &resume_buffer);
-    if (!expect_status("resume parked session", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_status("resume should reject short report buffer struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+
+    resume_buffer.struct_size = sizeof(resume_buffer);
+    resume_buffer.reports = NULL;
+    resume_buffer.report_capacity = 1;
+    resume_buffer.report_count = 0;
+    status = mizu_session_resume(session, &resume_buffer);
+    if (!expect_status("resume should reject missing report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("resume should still report required count when storage is missing",
+                     resume_buffer.report_count == 1)) return 1;
+
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after rejected resume outputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("rejected resume outputs should preserve parked flag",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) != 0)) return 1;
+    if (!expect_true("rejected resume outputs should preserve live context flag",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+    if (!expect_true("rejected resume outputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+
+    status = mizu_session_resume(session, NULL);
+    if (!expect_status("resume should allow null report buffer", status, MIZU_STATUS_OK)) return 1;
 
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info after resume", status, MIZU_STATUS_OK)) return 1;

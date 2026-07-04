@@ -29,7 +29,13 @@ int main(void) {
     mizu_model_t *model = NULL;
     mizu_status_code_t status;
     size_t required_bytes = 0;
+    size_t required_bytes_zero = 0;
+    size_t required_bytes_small = 0;
+    size_t required_bytes_exact = 0;
     char error_buffer[256];
+    char tiny_error[1] = {'x'};
+    char small_error[8];
+    char *exact_error = NULL;
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
 
@@ -68,11 +74,40 @@ int main(void) {
     status = mizu_model_open(runtime, &model_config, &model);
     if (!expect_status("model open should fail when Apple is unavailable", status, MIZU_STATUS_NO_VALID_PLAN)) return 1;
 
+    status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes_zero);
+    if (!expect_status("copy last error should allow null buffer", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("null-buffer copy should report required size", required_bytes_zero > 1)) return 1;
+
+    status = mizu_runtime_copy_last_error(runtime, tiny_error, sizeof(tiny_error), &required_bytes_small);
+    if (!expect_status("copy last error should allow one-byte buffer", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("one-byte error buffer should stay nul terminated", tiny_error[0] == '\0')) return 1;
+    if (!expect_true("one-byte buffer should preserve required size", required_bytes_small == required_bytes_zero)) return 1;
+
     memset(error_buffer, 0, sizeof(error_buffer));
     status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
     if (!expect_status("copy last error", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("full-buffer copy should preserve required size", required_bytes == required_bytes_zero)) return 1;
     if (!expect_true("error text should mention unavailable backend",
                      strstr(error_buffer, "no requested backend is available on this runtime") != NULL)) return 1;
+
+    memset(small_error, 'x', sizeof(small_error));
+    status = mizu_runtime_copy_last_error(runtime, small_error, sizeof(small_error), &required_bytes_small);
+    if (!expect_status("copy last error should truncate safely", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("small-buffer copy should preserve required size", required_bytes_small == required_bytes)) return 1;
+    if (!expect_true("small error buffer should stay nul terminated", small_error[sizeof(small_error) - 1] == '\0')) return 1;
+    if (!expect_true("small error buffer should match full-message prefix",
+                     strncmp(small_error, error_buffer, sizeof(small_error) - 1) == 0)) return 1;
+
+    exact_error = (char *)malloc(required_bytes);
+    if (!expect_true("exact-size error buffer allocation should succeed", exact_error != NULL)) return 1;
+    memset(exact_error, 0, required_bytes);
+    status = mizu_runtime_copy_last_error(runtime, exact_error, required_bytes, &required_bytes_exact);
+    if (!expect_status("copy last error should fill exact-size buffer", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("exact-size buffer should preserve required size", required_bytes_exact == required_bytes)) return 1;
+    if (!expect_true("exact-size error buffer should round-trip full message",
+                     strcmp(exact_error, error_buffer) == 0)) return 1;
+    free(exact_error);
+    exact_error = NULL;
 
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("destroy unavailable runtime", status, MIZU_STATUS_OK)) return 1;
@@ -99,6 +134,7 @@ int main(void) {
     unsetenv("MIZU_FORCE_APPLE_METAL_AVAILABLE");
     unsetenv("MIZU_FORCE_CUDA_AVAILABLE");
 
+    free(exact_error);
     puts("test_backend_availability: PASS");
     return 0;
 }

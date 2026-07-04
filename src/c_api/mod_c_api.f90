@@ -50,6 +50,7 @@ module mod_c_api
                            set_runtime_error
   use mod_workspace, only: reserve_workspace_bytes, release_workspace_bytes
   use mod_session,   only: initialize_session_state, reset_session_state, &
+                           validate_prefill, validate_decode, validate_park, validate_resume, &
                            stage_tokens, stage_modal_input, clear_pending_inputs, &
                            complete_prefill, complete_decode, park_session_state, &
                            resume_session_state, evict_parked_session, &
@@ -779,6 +780,12 @@ contains
       return
     end if
 
+    status_code = validate_park(session)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_park = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     stage_started_us = monotonic_timestamp_us()
     call park_session_state(session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
@@ -847,6 +854,12 @@ contains
     end if
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_resume = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    status_code = validate_resume(session)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
@@ -1135,6 +1148,12 @@ contains
       return
     end if
 
+    status_code = validate_prefill(session)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_prefill = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     if (has_modal_inputs) then
       call prepare_projector_stage_candidate(runtime, optimization_store, model, staged_modal_byte_count_before, &
         staged_modal_kind_before, staged_modal_dtype_before, staged_modal_slot_name_before, &
@@ -1383,6 +1402,12 @@ contains
     end if
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    status_code = validate_decode(session)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return

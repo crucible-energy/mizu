@@ -34,8 +34,10 @@ module mod_c_api
                            MIZU_CACHE_FLAG_PLAN_HIT, MIZU_CACHE_FLAG_SESSION_HIT, &
                            MIZU_CACHE_FLAG_MM_HIT, MIZU_CACHE_FLAG_WINNER_REUSED, &
                            MIZU_MODALITY_KIND_IMAGE, &
+                           MIZU_STORAGE_KIND_ENCODED_BYTES, &
                            MIZU_DTYPE_U8, MIZU_DTYPE_I32, MIZU_DTYPE_F16, MIZU_DTYPE_BF16, &
                            MIZU_DTYPE_F32, &
+                           MIZU_LIFETIME_POLICY_COPY, MIZU_LIFETIME_POLICY_BORROW_UNTIL_PREFILL, &
                            SOURCE_FORMAT_MIZU_IMPORT_BUNDLE, runtime_handle, model_handle, &
                            session_handle, runtime_config, model_open_config, session_config, &
                            model_info, session_info, execution_report, runtime_state, &
@@ -973,6 +975,12 @@ contains
     end if
 
     status_code = require_input_struct_size(input%struct_size, c_sizeof(input))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    status_code = validate_modal_input_descriptor_c(input)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
       return
@@ -6023,6 +6031,53 @@ contains
     status_code = MIZU_STATUS_OK
     if (actual_size < expected_size) status_code = MIZU_STATUS_BUFFER_TOO_SMALL
   end function require_output_struct_size
+
+  integer(i32) function validate_modal_input_descriptor_c(input) result(status_code)
+    type(c_modal_input_desc), intent(in) :: input
+    character(len=MAX_PATH_LEN)          :: slot_name
+
+    status_code = MIZU_STATUS_OK
+
+    slot_name = trim(copy_c_string_ptr(input%slot_name_z, "image"))
+    if (len_trim(slot_name) == 0) slot_name = "image"
+    if (trim(slot_name) /= "image") then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+
+    if (int(input%placeholder_ordinal, kind=i32) /= 1_i32) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+
+    if (int(input%modality_kind, kind=i32) /= MIZU_MODALITY_KIND_IMAGE) then
+      status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+      return
+    end if
+
+    if (int(input%storage_kind, kind=i32) /= MIZU_STORAGE_KIND_ENCODED_BYTES) then
+      status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+      return
+    end if
+
+    if (int(input%dtype, kind=i32) /= MIZU_DTYPE_U8) then
+      status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+      return
+    end if
+
+    if (int(input%rank, kind=i32) /= 0_i32 .or. c_associated(input%shape)) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+
+    select case (int(input%lifetime_policy, kind=i32))
+    case (MIZU_LIFETIME_POLICY_COPY, MIZU_LIFETIME_POLICY_BORROW_UNTIL_PREFILL)
+      continue
+    case default
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end select
+  end function validate_modal_input_descriptor_c
 
   pure function make_stage_report(stage_kind, backend_family, execution_route, fallback_reason, &
                                   selection_mode, cold_state, cache_flags, plan_id, elapsed_us) &

@@ -37,8 +37,9 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
 - Closed and destroyed handles are rejected by pointer identity before any box
   dereference, preventing stale-handle use-after-free on the C ABI wrapper
   path.
-- Slot reuse clears the active pointer first, then releases the wrapper box, so
-  stale caller pointers fail closed as `MIZU_STATUS_INVALID_ARGUMENT`.
+- Slot reuse clears the active pointer and retires the wrapper box without
+  freeing it, so stale caller pointers cannot alias a later live handle after
+  allocator reuse and therefore fail closed as `MIZU_STATUS_INVALID_ARGUMENT`.
 
 ### Bridge Boundaries
 
@@ -70,7 +71,10 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
 
 ## Approved Exceptions
 
-- None currently recorded.
+- Opaque-handle wrapper boxes are intentionally retained until process exit
+  after close or destroy. This trades a tiny amount of per-handle memory for a
+  fail-closed stale-handle contract that avoids use-after-free and allocator
+  address-reuse ABA problems at the C ABI boundary.
 
 ## Open Questions
 

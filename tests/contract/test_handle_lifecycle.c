@@ -16,14 +16,19 @@ static int expect_status(const char *label, mizu_status_code_t actual, mizu_stat
 
 int main(void) {
     mizu_runtime_t *runtime = NULL;
+    mizu_runtime_t *runtime_reuse = NULL;
     mizu_model_t *model = NULL;
+    mizu_model_t *model_reuse = NULL;
     mizu_session_t *session = NULL;
+    mizu_session_t *session_reuse = NULL;
     mizu_status_code_t status;
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
     mizu_session_info_t session_info;
+    mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
+    mizu_model_info_t model_info_reuse;
     size_t required_bytes = 0;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -78,25 +83,43 @@ int main(void) {
     session_info.struct_size = sizeof(session_info);
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_open(model, &session_config, &session_reuse);
+    if (!expect_status("session reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("closed session get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_session_close(session);
     if (!expect_status("double session close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    session_info_reuse.struct_size = sizeof(session_info_reuse);
+    status = mizu_session_get_info(session_reuse, &session_info_reuse);
+    if (!expect_status("reopened session should remain valid", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_close(session_reuse);
+    if (!expect_status("reopened session close", status, MIZU_STATUS_OK)) return 1;
 
     model_info.struct_size = sizeof(model_info);
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_open(runtime, &model_config, &model_reuse);
+    if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("closed model get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_model_close(model);
     if (!expect_status("double model close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    model_info_reuse.struct_size = sizeof(model_info_reuse);
+    status = mizu_model_get_info(model_reuse, &model_info_reuse);
+    if (!expect_status("reopened model should remain valid", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(model_reuse);
+    if (!expect_status("reopened model close", status, MIZU_STATUS_OK)) return 1;
 
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_runtime_create(&runtime_config, &runtime_reuse);
+    if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);
     if (!expect_status("destroyed runtime copy last error", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("double runtime destroy", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    status = mizu_runtime_destroy(runtime_reuse);
+    if (!expect_status("recreated runtime destroy", status, MIZU_STATUS_OK)) return 1;
 
     unsetenv("MIZU_FORCE_APPLE_ANE_AVAILABLE");
     unsetenv("MIZU_FORCE_APPLE_METAL_AVAILABLE");

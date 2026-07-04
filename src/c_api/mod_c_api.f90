@@ -323,6 +323,7 @@ contains
     type(runtime_box), pointer  :: box
     type(runtime_state), pointer :: runtime
     integer(i32) :: status_code
+    integer(i64) :: slot_id
 
     if (.not. c_associated(runtime_ptr)) then
       mizu_runtime_destroy = int(MIZU_STATUS_OK, kind=c_int32_t)
@@ -341,14 +342,17 @@ contains
       return
     end if
 
-    call persist_runtime_cache_state(runtime, runtime_cache_registry(int(box%id, kind=i64)))
-    call persist_runtime_optimization_state(runtime, runtime_optimization_registry(int(box%id, kind=i64)))
+    slot_id = int(box%id, kind=i64)
+    call persist_runtime_cache_state(runtime, runtime_cache_registry(slot_id))
+    call persist_runtime_optimization_state(runtime, runtime_optimization_registry(slot_id))
     call reset_runtime_state(runtime)
-    call reset_runtime_cache_bundle(runtime_cache_registry(int(box%id, kind=i64)))
-    call reset_runtime_optimization_store(runtime_optimization_registry(int(box%id, kind=i64)))
-    runtime_handle_ptrs(int(box%id, kind=i64)) = c_null_ptr
-    runtime_used(int(box%id, kind=i64)) = .false.
-    deallocate(box)
+    call reset_runtime_cache_bundle(runtime_cache_registry(slot_id))
+    call reset_runtime_optimization_store(runtime_optimization_registry(slot_id))
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    runtime_handle_ptrs(slot_id) = c_null_ptr
+    runtime_used(slot_id) = .false.
 
     mizu_runtime_destroy = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_runtime_destroy
@@ -492,6 +496,7 @@ contains
     type(runtime_state), pointer :: runtime
     integer(i32) :: status_code
     integer(i64) :: runtime_id
+    integer(i64) :: slot_id
 
     if (.not. c_associated(model_ptr)) then
       mizu_model_close = int(MIZU_STATUS_OK, kind=c_int32_t)
@@ -510,6 +515,7 @@ contains
       return
     end if
 
+    slot_id = int(box%id, kind=i64)
     runtime_id = model%runtime_owner%value
     if (is_runtime_slot_valid(runtime_id)) then
       runtime => runtime_registry(runtime_id)
@@ -517,9 +523,11 @@ contains
     end if
 
     call reset_model_state(model)
-    model_handle_ptrs(int(box%id, kind=i64)) = c_null_ptr
-    model_used(int(box%id, kind=i64)) = .false.
-    deallocate(box)
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    model_handle_ptrs(slot_id) = c_null_ptr
+    model_used(slot_id) = .false.
 
     mizu_model_close = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_model_close
@@ -675,6 +683,7 @@ contains
     type(model_state), pointer   :: model
     integer(i32) :: status_code
     integer(i64) :: model_id
+    integer(i64) :: slot_id
 
     if (.not. c_associated(session_ptr)) then
       mizu_session_close = int(MIZU_STATUS_OK, kind=c_int32_t)
@@ -687,6 +696,7 @@ contains
       return
     end if
 
+    slot_id = int(box%id, kind=i64)
     model_id = session%model_owner%value
     if (is_model_slot_valid(model_id)) then
       model => model_registry(model_id)
@@ -694,9 +704,11 @@ contains
     end if
 
     call reset_session_state(session)
-    session_handle_ptrs(int(box%id, kind=i64)) = c_null_ptr
-    session_used(int(box%id, kind=i64)) = .false.
-    deallocate(box)
+    ! Retire the wrapper box without freeing it so stale opaque pointers cannot
+    ! alias a future handle after allocator reuse.
+    box%id = 0_c_int64_t
+    session_handle_ptrs(slot_id) = c_null_ptr
+    session_used(slot_id) = .false.
 
     mizu_session_close = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_session_close
@@ -1868,25 +1880,37 @@ contains
   pure logical function is_runtime_slot_valid(slot_id) result(is_valid)
     integer(i64), intent(in) :: slot_id
 
-    is_valid = allocated(runtime_used) .and. allocated(runtime_handle_ptrs) .and. slot_id >= 1_i64 .and. &
-      slot_id <= int(size(runtime_used), kind=i64) .and. runtime_used(slot_id) .and. &
-      c_associated(runtime_handle_ptrs(slot_id))
+    is_valid = .false.
+    if (.not. allocated(runtime_used)) return
+    if (.not. allocated(runtime_handle_ptrs)) return
+    if (slot_id < 1_i64) return
+    if (slot_id > int(size(runtime_used), kind=i64)) return
+    if (.not. runtime_used(slot_id)) return
+    is_valid = c_associated(runtime_handle_ptrs(slot_id))
   end function is_runtime_slot_valid
 
   pure logical function is_model_slot_valid(slot_id) result(is_valid)
     integer(i64), intent(in) :: slot_id
 
-    is_valid = allocated(model_used) .and. allocated(model_handle_ptrs) .and. slot_id >= 1_i64 .and. &
-      slot_id <= int(size(model_used), kind=i64) .and. model_used(slot_id) .and. &
-      c_associated(model_handle_ptrs(slot_id))
+    is_valid = .false.
+    if (.not. allocated(model_used)) return
+    if (.not. allocated(model_handle_ptrs)) return
+    if (slot_id < 1_i64) return
+    if (slot_id > int(size(model_used), kind=i64)) return
+    if (.not. model_used(slot_id)) return
+    is_valid = c_associated(model_handle_ptrs(slot_id))
   end function is_model_slot_valid
 
   pure logical function is_session_slot_valid(slot_id) result(is_valid)
     integer(i64), intent(in) :: slot_id
 
-    is_valid = allocated(session_used) .and. allocated(session_handle_ptrs) .and. slot_id >= 1_i64 .and. &
-      slot_id <= int(size(session_used), kind=i64) .and. session_used(slot_id) .and. &
-      c_associated(session_handle_ptrs(slot_id))
+    is_valid = .false.
+    if (.not. allocated(session_used)) return
+    if (.not. allocated(session_handle_ptrs)) return
+    if (slot_id < 1_i64) return
+    if (slot_id > int(size(session_used), kind=i64)) return
+    if (.not. session_used(slot_id)) return
+    is_valid = c_associated(session_handle_ptrs(slot_id))
   end function is_session_slot_valid
 
   integer(i32) function build_model_info(config, available_backend_mask, manifest, info) result(status_code)

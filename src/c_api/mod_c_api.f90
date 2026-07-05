@@ -790,6 +790,7 @@ contains
 
     status_code = validate_park(session)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session cannot park in current state")
       mizu_session_park = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1172,6 +1173,7 @@ contains
 
     status_code = validate_prefill(session)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session cannot prefill in current state")
       mizu_session_prefill = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1451,6 +1453,7 @@ contains
 
     status_code = validate_decode(session)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session cannot decode in current state")
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1506,6 +1509,8 @@ contains
     if (session%has_live_context .and. session%live_context_producer_stage == MIZU_STAGE_DECODE) then
       if (report_backend_family /= session%live_context_backend_family .or. &
           report_route /= session%live_context_execution_route) then
+        call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_STATE, &
+          "decode route no longer matches live decode context")
         mizu_session_decode_step = int(MIZU_STATUS_INVALID_STATE, kind=c_int32_t)
         return
       end if

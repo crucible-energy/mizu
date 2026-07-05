@@ -104,6 +104,36 @@ int main(void) {
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
 
+    status = mizu_session_prefill(session, NULL);
+    if (!expect_status("prefill without pending inputs", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("prefill failure should explain invalid session state",
+                     strstr(error_buffer, "session cannot prefill in current state") != NULL)) return 1;
+
+    {
+        mizu_decode_options_t decode_options;
+        mizu_decode_result_t decode_result;
+
+        memset(&decode_options, 0, sizeof(decode_options));
+        decode_options.struct_size = sizeof(decode_options);
+        decode_options.token_budget = 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode without live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode failure should replace prefill error text",
+                         strstr(error_buffer, "session cannot decode in current state") != NULL)) return 1;
+    }
+
+    status = mizu_session_park(session, NULL);
+    if (!expect_status("park without live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("park failure should replace decode error text",
+                     strstr(error_buffer, "session cannot park in current state") != NULL)) return 1;
+
     status = mizu_model_close(model);
     if (!expect_status("model close with live session", status, MIZU_STATUS_BUSY)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;

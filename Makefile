@@ -103,8 +103,145 @@ CONTRACT_BINS := \
 
 TOOL_TESTS := \
 	tests/tooling/test_format_local.py \
+	tests/tooling/test_make_dependencies.py \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
+
+UNIT_COMMON_F90 := \
+	src/common/mod_kinds.f90 \
+	src/common/mod_status.f90 \
+	src/common/mod_types.f90
+
+UNIT_MEMORY_F90 := \
+	$(UNIT_COMMON_F90) \
+	src/common/mod_memory.f90
+
+UNIT_MODEL_F90 := \
+	src/model/mod_model_manifest.f90 \
+	src/model/mod_model_import_layout.f90 \
+	src/model/mod_model_loader.f90
+
+MODEL_MANIFEST_LOADER_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	tests/unit/test_model_manifest_loader.f90
+
+CACHE_KEYS_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	src/cache/mod_cache_keys.f90 \
+	tests/unit/test_cache_keys.f90
+
+CACHE_STORE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	src/model/mod_model_manifest.f90 \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	tests/unit/test_cache_store.f90
+
+PLAN_CACHE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	src/cache/mod_plan_cache.f90 \
+	tests/unit/test_plan_cache.f90
+
+WEIGHT_CACHE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	src/cache/mod_weight_cache.f90 \
+	tests/unit/test_weight_cache.f90
+
+SESSION_CACHE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	src/cache/mod_session_cache.f90 \
+	src/runtime/mod_session.f90 \
+	tests/unit/test_session_cache.f90
+
+MM_CACHE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	$(UNIT_MODEL_F90) \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	src/cache/mod_mm_cache.f90 \
+	tests/unit/test_mm_cache.f90
+
+OPTIMIZATION_STORE_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	src/model/mod_model_manifest.f90 \
+	src/cache/mod_cache_keys.f90 \
+	src/cache/mod_cache_store.f90 \
+	src/runtime/mod_optimization_store.f90 \
+	tests/unit/test_optimization_store.f90
+
+BACKEND_REGISTRY_TEST_SOURCES := \
+	$(UNIT_MEMORY_F90) \
+	src/runtime/mod_workspace.f90 \
+	src/runtime/mod_runtime.f90 \
+	src/backends/mod_backend_contract.f90 \
+	src/backends/mod_backend_probe_support.f90 \
+	src/backends/apple/mod_apple_bridge.f90 \
+	src/backends/apple/mod_apple_capability.f90 \
+	src/backends/cuda/mod_cuda_bridge.f90 \
+	src/backends/cuda/mod_cuda_capability.f90 \
+	src/backends/mod_backend_registry.f90 \
+	tests/unit/test_backend_registry.f90 \
+	$(APPLE_BRIDGE_OBJ) \
+	$(CUDA_BRIDGE_OBJ)
+
+RUNTIME_WORKSPACE_TEST_SOURCES := \
+	$(UNIT_MEMORY_F90) \
+	src/runtime/mod_workspace.f90 \
+	src/runtime/mod_runtime.f90 \
+	tests/unit/test_runtime_workspace.f90
+
+SESSION_STAGING_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	src/runtime/mod_session.f90 \
+	tests/unit/test_session_staging.f90
+
+APPLE_PLANNER_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	src/backends/mod_backend_contract.f90 \
+	src/backends/apple/mod_apple_planner.f90 \
+	tests/unit/test_apple_planner.f90
+
+APPLE_EXECUTOR_TEST_SOURCES := \
+	$(UNIT_MEMORY_F90) \
+	src/runtime/mod_workspace.f90 \
+	src/model/mod_model_manifest.f90 \
+	src/backends/apple/mod_apple_bridge.f90 \
+	src/backends/apple/mod_apple_executor.f90 \
+	tests/unit/test_apple_executor.f90 \
+	$(APPLE_BRIDGE_OBJ)
+
+CUDA_PLANNER_TEST_SOURCES := \
+	$(UNIT_COMMON_F90) \
+	src/backends/mod_backend_contract.f90 \
+	src/backends/cuda/mod_cuda_planner.f90 \
+	tests/unit/test_cuda_planner.f90
+
+CUDA_EXECUTOR_TEST_SOURCES := \
+	$(UNIT_MEMORY_F90) \
+	src/runtime/mod_workspace.f90 \
+	src/model/mod_model_manifest.f90 \
+	src/backends/cuda/mod_cuda_bridge.f90 \
+	src/backends/cuda/mod_cuda_executor.f90 \
+	tests/unit/test_cuda_executor.f90 \
+	$(CUDA_BRIDGE_OBJ)
+
+define build_fortran_test
+$1: $$($2) | $$(TEST_DIR)
+	mkdir -p $$(TEST_DIR)/$3
+	$$(FC) $$(FFLAGS) -J $$(TEST_DIR)/$3 -o $$@ \
+		$$($2) $4
+endef
 
 .PHONY: all hooks format format-check check-local test unit-tests contract-tests contract-smokes tool-tests clean
 
@@ -183,212 +320,34 @@ $(APPLE_BRIDGE_OBJ): $(APPLE_BRIDGE_SRC) src/backends/apple/apple_bridge.h \
 	$(CC) $(CFLAGS) -Iinclude -Isrc/backends/apple -c $< -o $@
 endif
 
-$(TEST_DIR)/test_model_manifest_loader: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/loader_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/loader_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		tests/unit/test_model_manifest_loader.f90
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_model_manifest_loader,MODEL_MANIFEST_LOADER_TEST_SOURCES,loader_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_cache_keys,CACHE_KEYS_TEST_SOURCES,cache_keys_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_cache_store,CACHE_STORE_TEST_SOURCES,cache_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_plan_cache,PLAN_CACHE_TEST_SOURCES,plan_cache_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_weight_cache,WEIGHT_CACHE_TEST_SOURCES,weight_cache_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_session_cache,SESSION_CACHE_TEST_SOURCES,session_cache_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_mm_cache,MM_CACHE_TEST_SOURCES,mm_cache_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_optimization_store,OPTIMIZATION_STORE_TEST_SOURCES,optimization_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_backend_registry,BACKEND_REGISTRY_TEST_SOURCES,backend_registry_mods,$(APPLE_BRIDGE_LINK_LIBS) $(CUDA_BRIDGE_LINK_LIBS)))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_runtime_workspace,RUNTIME_WORKSPACE_TEST_SOURCES,runtime_workspace_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_session_staging,SESSION_STAGING_TEST_SOURCES,session_staging_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_apple_planner,APPLE_PLANNER_TEST_SOURCES,apple_planner_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_apple_executor,APPLE_EXECUTOR_TEST_SOURCES,apple_executor_mods,$(APPLE_BRIDGE_LINK_LIBS)))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_cuda_planner,CUDA_PLANNER_TEST_SOURCES,cuda_planner_mods))
+$(eval $(call build_fortran_test,$(TEST_DIR)/test_cuda_executor,CUDA_EXECUTOR_TEST_SOURCES,cuda_executor_mods,$(CUDA_BRIDGE_LINK_LIBS)))
 
-$(TEST_DIR)/test_cache_keys: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/cache_keys_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/cache_keys_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		src/cache/mod_cache_keys.f90 \
-		tests/unit/test_cache_keys.f90
+CONTRACT_OBJECT_CPPFLAGS :=
+$(TEST_DIR)/test_cuda_artifacts.o: CONTRACT_OBJECT_CPPFLAGS := $(CUDA_TEST_CPPFLAGS)
+$(TEST_DIR)/test_qwench_gguf_cuda_smoke.o: CONTRACT_OBJECT_CPPFLAGS := $(CUDA_TEST_CPPFLAGS)
 
-$(TEST_DIR)/test_cache_store: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/cache_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/cache_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		tests/unit/test_cache_store.f90
+$(TEST_DIR)/%.o: tests/contract/%.c include/mizu.h | $(TEST_DIR)
+	$(CC) $(CFLAGS) $(CONTRACT_OBJECT_CPPFLAGS) -Iinclude -c $< -o $@
 
-$(TEST_DIR)/test_plan_cache: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/plan_cache_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/plan_cache_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		src/cache/mod_plan_cache.f90 \
-		tests/unit/test_plan_cache.f90
-
-$(TEST_DIR)/test_weight_cache: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/weight_cache_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/weight_cache_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		src/cache/mod_weight_cache.f90 \
-		tests/unit/test_weight_cache.f90
-
-$(TEST_DIR)/test_session_cache: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/session_cache_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/session_cache_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		src/cache/mod_session_cache.f90 \
-		src/runtime/mod_session.f90 \
-		tests/unit/test_session_cache.f90
-
-$(TEST_DIR)/test_mm_cache: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/mm_cache_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/mm_cache_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/model/mod_model_import_layout.f90 \
-		src/model/mod_model_loader.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		src/cache/mod_mm_cache.f90 \
-		tests/unit/test_mm_cache.f90
-
-$(TEST_DIR)/test_optimization_store: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/optimization_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/optimization_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/cache/mod_cache_keys.f90 \
-		src/cache/mod_cache_store.f90 \
-		src/runtime/mod_optimization_store.f90 \
-		tests/unit/test_optimization_store.f90
-
-$(TEST_DIR)/test_backend_registry: $(TEST_DIR) $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
-	mkdir -p $(TEST_DIR)/backend_registry_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/backend_registry_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_memory.f90 \
-		src/common/mod_types.f90 \
-		src/runtime/mod_workspace.f90 \
-		src/runtime/mod_runtime.f90 \
-		src/backends/mod_backend_contract.f90 \
-		src/backends/mod_backend_probe_support.f90 \
-		src/backends/apple/mod_apple_bridge.f90 \
-		src/backends/apple/mod_apple_capability.f90 \
-		src/backends/cuda/mod_cuda_bridge.f90 \
-		src/backends/cuda/mod_cuda_capability.f90 \
-		src/backends/mod_backend_registry.f90 \
-		tests/unit/test_backend_registry.f90 \
-		$(APPLE_BRIDGE_OBJ) \
-		$(CUDA_BRIDGE_OBJ) \
-		$(APPLE_BRIDGE_LINK_LIBS) \
-		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_runtime_workspace: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/runtime_workspace_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/runtime_workspace_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_memory.f90 \
-		src/common/mod_types.f90 \
-		src/runtime/mod_workspace.f90 \
-		src/runtime/mod_runtime.f90 \
-		tests/unit/test_runtime_workspace.f90
-
-$(TEST_DIR)/test_session_staging: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/session_staging_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/session_staging_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/runtime/mod_session.f90 \
-		tests/unit/test_session_staging.f90
-
-$(TEST_DIR)/test_apple_planner: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/apple_planner_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/apple_planner_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/backends/mod_backend_contract.f90 \
-		src/backends/apple/mod_apple_planner.f90 \
-		tests/unit/test_apple_planner.f90
-
-$(TEST_DIR)/test_apple_executor: $(TEST_DIR) $(APPLE_BRIDGE_OBJ)
-	mkdir -p $(TEST_DIR)/apple_executor_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/apple_executor_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_memory.f90 \
-		src/common/mod_types.f90 \
-		src/runtime/mod_workspace.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/backends/apple/mod_apple_bridge.f90 \
-		src/backends/apple/mod_apple_executor.f90 \
-		tests/unit/test_apple_executor.f90 \
-		$(APPLE_BRIDGE_OBJ) \
-		$(APPLE_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_cuda_planner: $(TEST_DIR)
-	mkdir -p $(TEST_DIR)/cuda_planner_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/cuda_planner_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_types.f90 \
-		src/backends/mod_backend_contract.f90 \
-		src/backends/cuda/mod_cuda_planner.f90 \
-		tests/unit/test_cuda_planner.f90
-
-$(TEST_DIR)/test_cuda_executor: $(TEST_DIR) $(CUDA_BRIDGE_OBJ)
-	mkdir -p $(TEST_DIR)/cuda_executor_mods
-	$(FC) $(FFLAGS) -J $(TEST_DIR)/cuda_executor_mods -o $@ \
-		src/common/mod_kinds.f90 \
-		src/common/mod_status.f90 \
-		src/common/mod_memory.f90 \
-		src/common/mod_types.f90 \
-		src/runtime/mod_workspace.f90 \
-		src/model/mod_model_manifest.f90 \
-		src/backends/cuda/mod_cuda_bridge.f90 \
-		src/backends/cuda/mod_cuda_executor.f90 \
-		tests/unit/test_cuda_executor.f90 \
-		$(CUDA_BRIDGE_OBJ) \
-		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_header_c_smoke.o: tests/contract/test_header_c_smoke.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
-$(TEST_DIR)/test_header_cpp_smoke.o: tests/contract/test_header_cpp_smoke.cpp | $(TEST_DIR)
+$(TEST_DIR)/test_header_cpp_smoke.o: tests/contract/test_header_cpp_smoke.cpp include/mizu.h | $(TEST_DIR)
 	$(CXX) $(CXXFLAGS) -Iinclude -c $< -o $@
 
-$(TEST_DIR)/test_opaque_handles: $(TEST_DIR)
+$(TEST_DIR)/test_opaque_handles: tests/contract/test_opaque_handles.c include/mizu.h | $(TEST_DIR)
 	$(CC) $(CFLAGS) -Iinclude tests/contract/test_opaque_handles.c -o $@
-
-$(TEST_DIR)/test_backend_availability.o: tests/contract/test_backend_availability.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_backend_availability: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_backend_availability.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -406,9 +365,6 @@ $(TEST_DIR)/test_backend_availability: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_backend_routing_contracts.o: tests/contract/test_backend_routing_contracts.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_backend_routing_contracts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_backend_routing_contracts.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/backend_routing_contracts_mods
@@ -424,9 +380,6 @@ $(TEST_DIR)/test_backend_routing_contracts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_handle_lifecycle.o: tests/contract/test_handle_lifecycle.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_handle_lifecycle: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_handle_lifecycle.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -444,9 +397,6 @@ $(TEST_DIR)/test_handle_lifecycle: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUN
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_handle_arena_capacity.o: tests/contract/test_handle_arena_capacity.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_handle_arena_capacity: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_handle_arena_capacity.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/handle_arena_capacity_mods
@@ -462,9 +412,6 @@ $(TEST_DIR)/test_handle_arena_capacity: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) 
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_model_open_failures.o: tests/contract/test_model_open_failures.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_model_open_failures: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_model_open_failures.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -482,9 +429,6 @@ $(TEST_DIR)/test_model_open_failures: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_modal_input_validation.o: tests/contract/test_modal_input_validation.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_modal_input_validation: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_modal_input_validation.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/modal_input_validation_mods
@@ -500,9 +444,6 @@ $(TEST_DIR)/test_modal_input_validation: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90)
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_token_only_execution.o: tests/contract/test_token_only_execution.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_token_only_execution: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_token_only_execution.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -520,9 +461,6 @@ $(TEST_DIR)/test_token_only_execution: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_decode_terminal_status.o: tests/contract/test_decode_terminal_status.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_decode_terminal_status: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_decode_terminal_status.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/decode_terminal_status_mods
@@ -538,9 +476,6 @@ $(TEST_DIR)/test_decode_terminal_status: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90)
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_session_eviction.o: tests/contract/test_session_eviction.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_session_eviction: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_session_eviction.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -558,9 +493,6 @@ $(TEST_DIR)/test_session_eviction: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUN
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_session_state_guards.o: tests/contract/test_session_state_guards.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_session_state_guards: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_session_state_guards.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/session_state_guards_mods
@@ -576,9 +508,6 @@ $(TEST_DIR)/test_session_state_guards: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_session_checkpoint_restore_failures.o: tests/contract/test_session_checkpoint_restore_failures.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_session_checkpoint_restore_failures: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_session_checkpoint_restore_failures.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -596,9 +525,6 @@ $(TEST_DIR)/test_session_checkpoint_restore_failures: $(COMMON_F90) $(MODEL_F90)
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_runtime_last_error_propagation.o: tests/contract/test_runtime_last_error_propagation.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_runtime_last_error_propagation: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_runtime_last_error_propagation.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/runtime_last_error_propagation_mods
@@ -614,9 +540,6 @@ $(TEST_DIR)/test_runtime_last_error_propagation: $(COMMON_F90) $(MODEL_F90) $(CA
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_struct_sizes.o: tests/contract/test_struct_sizes.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_struct_sizes: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_struct_sizes.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
@@ -634,9 +557,6 @@ $(TEST_DIR)/test_struct_sizes: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_cuda_artifacts.o: tests/contract/test_cuda_artifacts.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) $(CUDA_TEST_CPPFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_cuda_artifacts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_cuda_artifacts.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/cuda_contract_mods
@@ -653,9 +573,6 @@ $(TEST_DIR)/test_cuda_artifacts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTI
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
 
-$(TEST_DIR)/test_qwench_gguf_cuda_smoke.o: tests/contract/test_qwench_gguf_cuda_smoke.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) $(CUDA_TEST_CPPFLAGS) -Iinclude -c $< -o $@
-
 $(TEST_DIR)/test_qwench_gguf_cuda_smoke: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_qwench_gguf_cuda_smoke.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
 	mkdir -p $(TEST_DIR)/qwench_gguf_cuda_mods
@@ -671,9 +588,6 @@ $(TEST_DIR)/test_qwench_gguf_cuda_smoke: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90)
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \
 		$(CUDA_BRIDGE_LINK_LIBS)
-
-$(TEST_DIR)/test_stage_reports.o: tests/contract/test_stage_reports.c | $(TEST_DIR)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
 
 $(TEST_DIR)/test_stage_reports: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
 	$(CAPI_F90) $(TEST_DIR)/test_stage_reports.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)

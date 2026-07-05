@@ -1060,6 +1060,15 @@ program test_cuda_executor
     status_code, MIZU_STATUS_OK)
   call expect_equal_i32("cuda binary-sidecar replay should ignore zero-byte usage summaries when dispatch data remains", &
     token_value_with_other_context, token_value_with_dispatch_buffer_only)
+  call write_pack_dispatch_buffer_fixture(trim(cache_root) // "/" // trim(decode_dispatch_buffer_path), 3_i32, &
+    2222222222222222_i64, 4_i32)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda dispatch-led replay should reject incomplete dispatch selections", &
+    status_code, MIZU_STATUS_INVALID_STATE)
+  call write_pack_dispatch_buffer_fixture(trim(cache_root) // "/" // trim(decode_dispatch_buffer_path), 4_i32, &
+    2222222222222222_i64)
   call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
     2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, pack_tile_buffer_path)
   call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
@@ -1574,10 +1583,11 @@ contains
     close(unit_id)
   end subroutine write_pack_execution_buffer_fixture
 
-  subroutine write_pack_dispatch_buffer_fixture(full_path, entry_count, usage_hash)
+  subroutine write_pack_dispatch_buffer_fixture(full_path, entry_count, usage_hash, usage_count_override)
     character(len=*), intent(in) :: full_path
     integer(i32), intent(in)     :: entry_count
     integer(i64), intent(in)     :: usage_hash
+    integer(i32), intent(in), optional :: usage_count_override
     integer(i32), parameter      :: CUDA_DISPATCH_BUFFER_MAGIC = int(z'53445A4D', kind=i32)
     integer(i32), parameter      :: CUDA_DISPATCH_BUFFER_VERSION = 1_i32
     integer(i32), parameter      :: CUDA_DISPATCH_BUFFER_HEADER_BYTES = 32_i32
@@ -1586,10 +1596,15 @@ contains
     integer(i32)                 :: record_index
     integer(i32)                 :: data_offset
     integer(i32)                 :: live_entry_count
+    integer(i32)                 :: reported_usage_count
     integer                      :: unit_id
 
     buffer_bytes = 0_i8
     live_entry_count = max(0_i32, min(entry_count, 4_i32))
+    reported_usage_count = live_entry_count
+    if (present(usage_count_override)) then
+      reported_usage_count = max(0_i32, min(usage_count_override, 4_i32))
+    end if
     data_offset = CUDA_DISPATCH_BUFFER_HEADER_BYTES
 
     do record_index = 1_i32, live_entry_count
@@ -1604,7 +1619,7 @@ contains
     call write_fixture_i32_le(buffer_bytes, 8_i32, CUDA_DISPATCH_BUFFER_HEADER_BYTES)
     call write_fixture_i32_le(buffer_bytes, 12_i32, CUDA_DISPATCH_BUFFER_ENTRY_BYTES)
     call write_fixture_i32_le(buffer_bytes, 16_i32, live_entry_count)
-    call write_fixture_i32_le(buffer_bytes, 20_i32, live_entry_count)
+    call write_fixture_i32_le(buffer_bytes, 20_i32, reported_usage_count)
     call write_fixture_i64_le(buffer_bytes, 24_i32, usage_hash)
 
     open(newunit=unit_id, file=trim(full_path), status="replace", access="stream", form="unformatted", action="write")

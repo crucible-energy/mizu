@@ -135,6 +135,7 @@ contains
     logical                      :: loaded_ok
     logical                      :: loaded_cached_spans
     logical                      :: has_pack_dependency
+    logical                      :: compact_pack_usage
     type(c_ptr)                  :: workspace_buffer_local
 
     consumed_token_count = 0_i64
@@ -171,7 +172,14 @@ contains
     call extract_payload_pack_usage_profile(payload_text, pack_usage)
     call hydrate_cached_pack_span_profile(cache_root, artifact_path, payload_text, pack_usage, loaded_cached_spans)
     if (.not. loaded_cached_spans) call hydrate_payload_pack_span_profile(pack_usage)
-    if (payload_uses_compact_pack_usage(cache_root, artifact_path, payload_text)) then
+    compact_pack_usage = payload_uses_compact_pack_usage(cache_root, artifact_path, payload_text)
+    if (compact_pack_usage .and. .not. loaded_cached_spans) then
+      if (.not. payload_has_embedded_pack_entry_records(payload_text)) then
+        status_code = MIZU_STATUS_INVALID_STATE
+        return
+      end if
+    end if
+    if (compact_pack_usage) then
       call build_compact_pack_artifact_hash(cache_root, artifact_path, payload_text, pack_usage, artifact_hash, &
         has_pack_dependency)
     else
@@ -231,6 +239,7 @@ contains
     logical                      :: loaded_cached_spans
     logical                      :: lineage_known
     logical                      :: has_pack_dependency
+    logical                      :: compact_pack_usage
     type(c_ptr)                  :: workspace_buffer_local
 
     emitted_token_count = 0_i64
@@ -264,7 +273,14 @@ contains
     call extract_payload_pack_usage_profile(payload_text, pack_usage)
     call hydrate_cached_pack_span_profile(cache_root, artifact_path, payload_text, pack_usage, loaded_cached_spans)
     if (.not. loaded_cached_spans) call hydrate_payload_pack_span_profile(pack_usage)
-    if (payload_uses_compact_pack_usage(cache_root, artifact_path, payload_text)) then
+    compact_pack_usage = payload_uses_compact_pack_usage(cache_root, artifact_path, payload_text)
+    if (compact_pack_usage .and. .not. loaded_cached_spans) then
+      if (.not. payload_has_embedded_pack_entry_records(payload_text)) then
+        status_code = MIZU_STATUS_INVALID_STATE
+        return
+      end if
+    end if
+    if (compact_pack_usage) then
       call build_compact_pack_artifact_hash(cache_root, artifact_path, payload_text, pack_usage, artifact_hash, &
         has_pack_dependency)
     else
@@ -508,6 +524,43 @@ contains
       is_compact = artifact_has_compact_pack_sidecars(cache_root, artifact_path)
     end if
   end function payload_uses_compact_pack_usage
+
+  logical function payload_has_embedded_pack_entry_records(payload_text) result(has_entries)
+    character(len=*), intent(in) :: payload_text
+    integer(i32)                 :: entry_index
+    character(len=32)            :: field_key
+    character(len=128)           :: value_text
+    logical                      :: found_entry
+
+    has_entries = .false.
+    if (len_trim(payload_text) == 0) return
+
+    do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
+      write(field_key, '("pack_use",I0,"=")') entry_index
+      value_text = ""
+      call extract_payload_field_text(payload_text, trim(field_key), value_text, found_entry)
+      if (found_entry) then
+        has_entries = .true.
+        return
+      end if
+
+      write(field_key, '("pack_dispatch",I0,"=")') entry_index
+      value_text = ""
+      call extract_payload_field_text(payload_text, trim(field_key), value_text, found_entry)
+      if (found_entry) then
+        has_entries = .true.
+        return
+      end if
+
+      write(field_key, '("pack_span",I0,"=")') entry_index
+      value_text = ""
+      call extract_payload_field_text(payload_text, trim(field_key), value_text, found_entry)
+      if (found_entry) then
+        has_entries = .true.
+        return
+      end if
+    end do
+  end function payload_has_embedded_pack_entry_records
 
   logical function artifact_has_compact_pack_sidecars(cache_root, artifact_path) result(has_sidecars)
     character(len=*), intent(in) :: cache_root
@@ -1505,6 +1558,8 @@ contains
     logical                                      :: found_span_record
     logical                                      :: applied_cached_entry_data
     integer(i32)                                 :: resolved_span_pack_index
+    integer(i32)                                 :: expected_entry_count
+    integer(i32)                                 :: resolved_entry_count
 
     loaded_cached = .false.
     pack_tile_buffer_count = 0_i32
@@ -1513,6 +1568,8 @@ contains
     span_buffer_count = 0_i32
     exec_buffer_count = 0_i32
     applied_cached_entry_data = .false.
+    expected_entry_count = 0_i32
+    resolved_entry_count = 0_i32
     if (allocated(pack_tile_buffer_bytes)) deallocate(pack_tile_buffer_bytes)
     if (allocated(dispatch_buffer_bytes)) deallocate(dispatch_buffer_bytes)
     if (allocated(usage_buffer_bytes)) deallocate(usage_buffer_bytes)
@@ -1761,6 +1818,8 @@ contains
         applied_dispatch_buffer)
     end if
 
+    expected_entry_count = min(MAX_CUDA_PACK_DISPATCH_ENTRIES, max(0_i32, pack_usage%usage_count))
+
     required_entry_found = .false.
     do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
       if (pack_usage%entry_bytes(entry_index) <= 0_i64 .and. pack_usage%entry_pack_indices(entry_index) <= 0_i32 .and. &
@@ -1941,12 +2000,21 @@ contains
 
     call refresh_compact_pack_usage_summary(pack_usage)
 
+    if (expected_entry_count > 0_i32) then
+      do entry_index = 1_i32, expected_entry_count
+        if (pack_usage%entry_bytes(entry_index) > 0_i64) resolved_entry_count = resolved_entry_count + 1_i32
+      end do
+    end if
+
     if (allocated(pack_tile_buffer_bytes)) deallocate(pack_tile_buffer_bytes)
     if (allocated(dispatch_buffer_bytes)) deallocate(dispatch_buffer_bytes)
     if (allocated(usage_buffer_bytes)) deallocate(usage_buffer_bytes)
     if (allocated(span_buffer_bytes)) deallocate(span_buffer_bytes)
     if (allocated(exec_buffer_bytes)) deallocate(exec_buffer_bytes)
     loaded_cached = required_entry_found .and. applied_cached_entry_data
+    if (expected_entry_count > 0_i32 .and. resolved_entry_count < expected_entry_count) then
+      loaded_cached = .false.
+    end if
   end subroutine hydrate_cached_pack_span_profile
 
   subroutine hydrate_pack_execution_buffer(buffer_bytes, buffer_count, pack_usage, applied_ok)

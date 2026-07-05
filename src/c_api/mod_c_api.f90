@@ -4237,7 +4237,7 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, metadata%payload_path)
     inquire(file=trim(full_path), exist=exists, size=existing_size)
-    if (exists) then
+    if (exists .and. existing_size > 0_i64) then
       metadata%is_materialized = .true.
       metadata%payload_bytes = max(1_i64, existing_size)
       return

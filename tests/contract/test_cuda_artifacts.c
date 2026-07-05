@@ -879,6 +879,13 @@ int main(void) {
         return 1;
     }
 
+    command_status = system("find /tmp/mizu_cuda_artifacts/artifacts/cuda/cuda/projector -type f -exec sh -c ': > \"$1\"' _ {} \\;");
+    if (!expect_true("cuda projector artifact truncation should succeed", command_status == 0)) return 1;
+    command_status = system("find /tmp/mizu_cuda_artifacts/artifacts/cuda/cuda/projector -type f -size 0c | grep -q .");
+    if (!expect_true("cuda projector artifact should be empty before warm rematerialization", command_status == 0)) {
+        return 1;
+    }
+
     for (size_t byte_index = 0; byte_index < sizeof(mutated_prefix); ++byte_index) {
         mutated_prefix[byte_index] = (uint8_t)(0xF0u - (uint8_t)byte_index);
     }
@@ -930,6 +937,10 @@ int main(void) {
     }
     if (!expect_true("cuda warm prefill should reuse winner",
                      (prefill_reports_warm[1].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) {
+        return 1;
+    }
+    command_status = system("find /tmp/mizu_cuda_artifacts/artifacts/cuda/cuda/projector -type f -size +0c | grep -q .");
+    if (!expect_true("cuda warm prefill should rematerialize empty projector artifacts", command_status == 0)) {
         return 1;
     }
     status = mizu_session_get_info(session_warm, &session_info_warm);

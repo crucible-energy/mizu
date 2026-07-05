@@ -35,6 +35,7 @@ program test_plan_cache
   logical                          :: saved_ok
   logical                          :: loaded_ok
   character(len=*), parameter      :: cache_path = "/tmp/mizu_test_plan_cache.txt"
+  character(len=*), parameter      :: blocked_cache_path = "/tmp/mizu_test_plan_cache_blocked.txt"
 
   status_code = load_model_manifest_from_root("tests/fixtures/models/fixture_mm_tiny", manifest)
   call expect_equal_i32("load multimodal fixture", status_code, MIZU_STATUS_OK)
@@ -171,6 +172,17 @@ program test_plan_cache
     record%artifact_metadata%payload_path, "-")
   call execute_command_line("rm -f " // cache_path)
 
+  call initialize_runtime_plan_cache(cache)
+  call record_plan_cache_entry(cache, cuda_key, 606_i64, metadata, status_code, &
+    candidate_key_text='reload guard')
+  call expect_equal_i32("seed plan cache before unreadable reload", status_code, MIZU_STATUS_OK)
+  call prepare_unreadable_file(blocked_cache_path)
+  call load_runtime_plan_cache(cache, blocked_cache_path, loaded_ok)
+  call expect_false("plan cache load from unreadable file should fail", loaded_ok)
+  call lookup_plan_cache_entry(cache, cuda_key, record, found)
+  call expect_false("failed replace-load should clear stale plan entries", found)
+  call execute_command_line("rm -f " // blocked_cache_path)
+
   call reset_runtime_plan_cache(cache)
   call lookup_plan_cache_entry(cache, cuda_key, record, found)
   call expect_false("reset plan cache should clear entries", found)
@@ -231,5 +243,17 @@ contains
       error stop 1
     end if
   end subroutine expect_false
+
+  subroutine prepare_unreadable_file(path)
+    character(len=*), intent(in) :: path
+    integer(i32) :: exitstat
+
+    call execute_command_line("rm -rf " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("remove stale blocked plan cache path", exitstat, 0_i32)
+    call execute_command_line("touch " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("create blocked plan cache file", exitstat, 0_i32)
+    call execute_command_line("chmod 000 " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("chmod blocked plan cache file", exitstat, 0_i32)
+  end subroutine prepare_unreadable_file
 
 end program test_plan_cache

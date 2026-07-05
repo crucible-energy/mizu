@@ -206,10 +206,10 @@ contains
     loaded_count = 0_i64
     loaded_ok = .false.
     if (len_trim(file_path) == 0) return
+    if (replace_existing) call reset_runtime_plan_cache(cache)
 
     inquire(file=trim(file_path), exist=exists)
     if (.not. exists) then
-      if (replace_existing) call reset_runtime_plan_cache(cache)
       loaded_ok = .true.
       return
     end if
@@ -217,7 +217,6 @@ contains
     open(newunit=unit_id, file=trim(file_path), status="old", action="read", iostat=ios)
     if (ios /= 0_i32) return
 
-    if (replace_existing) call reset_runtime_plan_cache(cache)
     do
       read(unit_id, "(A)", iostat=ios) line
       if (ios /= 0_i32) exit

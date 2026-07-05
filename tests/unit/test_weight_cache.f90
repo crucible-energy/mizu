@@ -33,6 +33,7 @@ program test_weight_cache
   logical                          :: saved_ok
   logical                          :: loaded_ok
   character(len=*), parameter      :: cache_path = "/tmp/mizu_test_weight_cache.txt"
+  character(len=*), parameter      :: blocked_cache_path = "/tmp/mizu_test_weight_cache_blocked.txt"
 
   status_code = load_model_manifest_from_root("tests/fixtures/models/fixture_mm_tiny", manifest)
   call expect_equal_i32("load multimodal fixture", status_code, MIZU_STATUS_OK)
@@ -197,6 +198,16 @@ program test_weight_cache
     record%artifact_metadata%payload_path, "")
   call execute_command_line("rm -f " // cache_path)
 
+  call initialize_runtime_weight_cache(cache)
+  call record_weight_cache_entry(cache, cuda_key, metadata, status_code, pack_identity_text="PACK RELOAD")
+  call expect_equal_i32("seed weight cache before unreadable reload", status_code, MIZU_STATUS_OK)
+  call prepare_unreadable_file(blocked_cache_path)
+  call load_runtime_weight_cache(cache, blocked_cache_path, loaded_ok)
+  call expect_false("weight cache load from unreadable file should fail", loaded_ok)
+  call lookup_weight_cache_entry(cache, cuda_key, record, found)
+  call expect_false("failed replace-load should clear stale weight entries", found)
+  call execute_command_line("rm -f " // blocked_cache_path)
+
   call reset_runtime_weight_cache(cache)
   call lookup_weight_cache_entry(cache, cuda_key, record, found)
   call expect_false("reset weight cache should clear entries", found)
@@ -316,5 +327,17 @@ contains
     end_index = start_index + end_index - 1_i32
     rewritten_key = key_text(:start_index - 1_i32) // key_text(end_index:)
   end function remove_backend_version_segment
+
+  subroutine prepare_unreadable_file(path)
+    character(len=*), intent(in) :: path
+    integer(i32) :: exitstat
+
+    call execute_command_line("rm -rf " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("remove stale blocked weight cache path", exitstat, 0_i32)
+    call execute_command_line("touch " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("create blocked weight cache file", exitstat, 0_i32)
+    call execute_command_line("chmod 000 " // trim(path), exitstat=exitstat)
+    call expect_equal_i32("chmod blocked weight cache file", exitstat, 0_i32)
+  end subroutine prepare_unreadable_file
 
 end program test_weight_cache

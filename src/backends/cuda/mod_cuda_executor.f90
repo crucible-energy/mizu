@@ -782,6 +782,30 @@ contains
     is_digit = (character_text(1:1) >= "0" .and. character_text(1:1) <= "9")
   end function is_ascii_digit
 
+  logical function pack_cache_identity_matches(pack_index, pack_offset, pack_bytes, candidate_pack_index, &
+                                               candidate_offset, candidate_bytes) result(matches_identity)
+    integer(i32), intent(in) :: pack_index
+    integer(i64), intent(in) :: pack_offset
+    integer(i64), intent(in) :: pack_bytes
+    integer(i32), intent(in) :: candidate_pack_index
+    integer(i64), intent(in) :: candidate_offset
+    integer(i64), intent(in) :: candidate_bytes
+
+    matches_identity = .false.
+    if (pack_index > 0_i32) then
+      if (candidate_pack_index /= pack_index) return
+      if (pack_bytes <= 0_i64) then
+        matches_identity = .true.
+        return
+      end if
+    else if (pack_bytes <= 0_i64) then
+      return
+    end if
+
+    if (candidate_offset /= pack_offset .or. candidate_bytes /= pack_bytes) return
+    matches_identity = .true.
+  end function pack_cache_identity_matches
+
   subroutine extract_resolved_pack_static_dependency_hash(cache_root, artifact_path, payload_text, dependency_hash, &
                                                           has_dependency)
     character(len=*), intent(in) :: cache_root
@@ -2666,9 +2690,8 @@ contains
       if (.not. found_bytes) cycle
       if (.not. parse_i64_text(value_text, candidate_bytes)) cycle
 
-      if (pack_index > 0_i32) then
-        if (candidate_pack_index /= pack_index) cycle
-      else if (candidate_offset /= pack_offset .or. candidate_bytes /= pack_bytes) then
+      if (.not. pack_cache_identity_matches(pack_index, pack_offset, pack_bytes, candidate_pack_index, &
+                                            candidate_offset, candidate_bytes)) then
         cycle
       end if
 
@@ -2806,9 +2829,8 @@ contains
       if (.not. found_bytes) cycle
       if (.not. parse_i64_text(value_text, candidate_bytes)) cycle
 
-      if (pack_index > 0_i32) then
-        if (candidate_pack_index /= pack_index) cycle
-      else if (candidate_offset /= pack_offset .or. candidate_bytes /= pack_bytes) then
+      if (.not. pack_cache_identity_matches(pack_index, pack_offset, pack_bytes, candidate_pack_index, &
+                                            candidate_offset, candidate_bytes)) then
         cycle
       end if
 

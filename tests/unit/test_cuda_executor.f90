@@ -41,6 +41,7 @@ program test_cuda_executor
   integer(i32) :: token_value_with_pack_index_override
   integer(i32) :: token_value_with_static_text_override
   integer(i32) :: token_value_with_dispatch_buffer_only
+  integer(i32) :: token_value_with_pack_buffer_only
   integer(i32) :: token_value_without_pack_cache
   integer(i32) :: token_value_with_payload_fallback
   integer(i32) :: context_byte_count_a
@@ -61,6 +62,7 @@ program test_cuda_executor
   integer(i64) :: artifact_hash
   integer(i64) :: usage_decode_artifact_hash
   integer(i64) :: binary_only_decode_artifact_hash
+  integer(i64) :: pack_buffer_only_decode_artifact_hash
   integer(i64) :: payload_only_decode_artifact_hash
   integer(i64) :: pack_usage_hash
   integer(i64) :: pack_usage_bytes
@@ -1002,6 +1004,79 @@ program test_cuda_executor
   call expect_equal_i32("cuda direct pack-buffer replay should restore the final tensor layout from the binary buffer", &
     pack_dispatch_layout_codes(4), 1_i32)
 
+  call write_pack_tile_buffer_fixture(trim(cache_root) // "/" // trim(pack_tile_buffer_path), .true., .false., .true.)
+
+  open(unit=13, file=trim(cache_root) // "/" // trim(decode_usage_path), status="replace", action="write")
+  write(13, "(A)") "candidate=decode_usage;stage=4;format=cuda_bf16_decode_plan_v1;" // &
+    "pack_dependency=cuda_import_weight_pack_v1;" // &
+    "pack_ref_tile_cache=" // pack_tile_cache_path // ";" // &
+    "pack_ref_tile_buffer=" // pack_tile_buffer_path // ";" // &
+    "pack_span_root=" // import_bundle_root // ";" // &
+    "pack_use1=token_embeddings|embedding_table|offset=0|" // &
+    "bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch1=offset=17|bytes=19|role=8|layout=9|pack=1;" // &
+    "pack_span1=weights/token_embeddings.bin|sample_bytes=64;" // &
+    "pack_use2=decoder_blocks|decoder_stack|offset=1089994752|" // &
+    "bytes=25690112|layout=packed;" // &
+    "pack_dispatch2=offset=23|bytes=29|role=7|layout=8|pack=2;" // &
+    "pack_span2=weights/decoder_blocks.bin|sample_bytes=64;" // &
+    "pack_use3=final_norm|normalization|offset=1115684864|" // &
+    "bytes=14336|layout=vector;" // &
+    "pack_dispatch3=offset=31|bytes=37|role=6|layout=7|pack=3;" // &
+    "pack_span3=weights/final_norm.bin|sample_bytes=64;" // &
+    "pack_use4=lm_head|token_projection|offset=1115699200|" // &
+    "bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch4=offset=41|bytes=43|role=5|layout=6|pack=4;" // &
+    "pack_span4=weights/lm_head.bin|sample_bytes=64;" // &
+    "pack_dispatch_count=4;pack_use_count=4;pack_use_bytes=2205693952;" // &
+    "pack_use_first_offset=0;pack_use_last_offset=1115699200;" // &
+    "pack_use_last_bytes=1089994752;" // &
+    "pack_use_hash=2222222222222222"
+  close(13)
+
+  call execute_command_line("rm -f " // cache_root // "/" // trim(pack_tile_cache_path) // " " // &
+    cache_root // "/" // trim(decode_usage_buffer_path) // " " // cache_root // "/" // trim(decode_dispatch_buffer_path) // &
+    " " // cache_root // "/" // trim(decode_span_buffer_path) // " " // cache_root // "/" // trim(decode_span_cache_path) // &
+    " " // cache_root // "/" // trim(decode_exec_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda pack-buffer-only replay cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_pack_buffer_only, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda pack-buffer-only replay without materialized hashes should still succeed", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda pack-buffer-only replay without materialized hashes should preserve readable lineage", &
+    snapshot_valid)
+  pack_buffer_only_decode_artifact_hash = artifact_hash
+
+  call write_stale_pack_tile_cache_fixture(trim(cache_root) // "/" // trim(pack_tile_cache_path), &
+    pack_tile_payload_path, pack_tile_buffer_path)
+
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda stale pack-tile cache replay should still succeed", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda stale pack-tile cache replay should preserve readable lineage", snapshot_valid)
+  call expect_equal_i64("cuda stale pack-tile cache should not override raw pack-buffer artifact lineage", &
+    artifact_hash, pack_buffer_only_decode_artifact_hash)
+  call expect_equal_i32("cuda stale pack-tile cache should not override raw pack-buffer token identity", &
+    token_value_with_other_context, token_value_with_pack_buffer_only)
+
+  call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
+    2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, pack_tile_buffer_path)
+  call write_pack_dispatch_buffer_fixture(trim(cache_root) // "/" // trim(decode_dispatch_buffer_path), 4_i32, &
+    2222222222222222_i64)
+  call write_pack_span_buffer_fixture(trim(cache_root) // "/" // trim(decode_span_buffer_path), import_bundle_root)
+  call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
+    import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, &
+    pack_tile_buffer_path, .false.)
+
   call write_pack_tile_cache_fixture(trim(cache_root) // "/" // trim(pack_tile_cache_path), &
     pack_tile_payload_path, pack_tile_buffer_path)
 
@@ -1318,10 +1393,12 @@ contains
     end if
   end subroutine expect_equal_i64
 
-  subroutine write_pack_tile_buffer_fixture(full_path, use_rewritten_bytes, use_rewritten_materialized_hashes)
+  subroutine write_pack_tile_buffer_fixture(full_path, use_rewritten_bytes, use_rewritten_materialized_hashes, &
+                                            omit_materialized_hashes)
     character(len=*), intent(in) :: full_path
     logical, intent(in)          :: use_rewritten_bytes
     logical, intent(in), optional :: use_rewritten_materialized_hashes
+    logical, intent(in), optional :: omit_materialized_hashes
     integer(i32), parameter      :: CUDA_PACK_BUFFER_MAGIC = int(z'42505A4D', kind=i32)
     integer(i32), parameter      :: CUDA_PACK_BUFFER_VERSION = 1_i32
     integer(i32), parameter      :: CUDA_PACK_BUFFER_HEADER_BYTES = 32_i32
@@ -1342,6 +1419,7 @@ contains
     integer(i32)                 :: record_offset
     integer                      :: unit_id
     logical                      :: rewrite_materialized_hashes
+    logical                      :: drop_materialized_hashes
 
     if (use_rewritten_bytes) then
       hex_records = [character(len=64) :: &
@@ -1375,11 +1453,16 @@ contains
     if (present(use_rewritten_materialized_hashes)) then
       rewrite_materialized_hashes = use_rewritten_materialized_hashes
     end if
+    drop_materialized_hashes = .false.
+    if (present(omit_materialized_hashes)) then
+      drop_materialized_hashes = omit_materialized_hashes
+    end if
     if (rewrite_materialized_hashes) then
       materialized_hashes = [9020000000000001_i64, 9020000000000002_i64, 9020000000000003_i64, 9020000000000004_i64]
     else
       materialized_hashes = [9010000000000001_i64, 9010000000000002_i64, 9010000000000003_i64, 9010000000000004_i64]
     end if
+    if (drop_materialized_hashes) materialized_hashes = 0_i64
 
     buffer_bytes = 0_i8
     data_offset = CUDA_PACK_BUFFER_HEADER_BYTES + (4_i32 * CUDA_PACK_BUFFER_ENTRY_BYTES)
@@ -1752,6 +1835,31 @@ contains
       "pack_count=4"
     close(unit_id)
   end subroutine write_pack_tile_cache_fixture
+
+  subroutine write_stale_pack_tile_cache_fixture(full_path, pack_tile_payload_path, pack_tile_buffer_path)
+    character(len=*), intent(in) :: full_path
+    character(len=*), intent(in) :: pack_tile_payload_path
+    character(len=*), intent(in) :: pack_tile_buffer_path
+    integer                      :: unit_id
+
+    open(newunit=unit_id, file=trim(full_path), status="replace", action="write")
+    write(unit_id, "(A)") "kind=cuda_weight_pack_tile_cache_v4;pack_payload=" // trim(pack_tile_payload_path) // ";" // &
+      "pack_buffer=" // trim(pack_tile_buffer_path) // ";" // &
+      "pack1_offset=64;pack1_bytes=1089994752;pack1_materialized_hash=9010000000000001;" // &
+      "pack1_page_hash=9100000000000001;pack1_page_words=8;" // &
+      "pack1_tile_hash=9200000000000001;pack1_tile_bytes=32;" // &
+      "pack2_offset=1089994816;pack2_bytes=25690112;pack2_materialized_hash=9010000000000002;" // &
+      "pack2_page_hash=9100000000000002;pack2_page_words=8;" // &
+      "pack2_tile_hash=9200000000000002;pack2_tile_bytes=32;" // &
+      "pack3_offset=1115684928;pack3_bytes=14336;pack3_materialized_hash=9010000000000003;" // &
+      "pack3_page_hash=9100000000000003;pack3_page_words=8;" // &
+      "pack3_tile_hash=9200000000000003;pack3_tile_bytes=32;" // &
+      "pack4_offset=1115699264;pack4_bytes=1089994752;pack4_materialized_hash=9010000000000004;" // &
+      "pack4_page_hash=9100000000000004;pack4_page_words=8;" // &
+      "pack4_tile_hash=9200000000000004;pack4_tile_bytes=32;" // &
+      "pack_count=4"
+    close(unit_id)
+  end subroutine write_stale_pack_tile_cache_fixture
 
   subroutine write_pack_span_cache_fixture(full_path, pack_tile_cache_path)
     character(len=*), intent(in) :: full_path

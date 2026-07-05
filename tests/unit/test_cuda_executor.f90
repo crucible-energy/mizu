@@ -1308,6 +1308,22 @@ program test_cuda_executor
   call expect_equal_i32("cuda payload replay should preserve token identity with a stale usage hash summary", &
     token_value_with_other_context, token_value_with_payload_fallback)
 
+  call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
+    4096_i64, 17_i64, 23_i64, 29_i64, 2222222222222222_i64, pack_tile_buffer_path)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore stale usage summary geometry", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with stale usage summary geometry", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with stale usage summary geometry", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with stale usage summary geometry", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
   call execute_command_line("rm -f " // cache_root // "/" // trim(decode_usage_buffer_path), exitstat=shell_status)
   call expect_equal_i32("cuda stale usage-summary cleanup should succeed", int(shell_status, kind=i32), 0_i32)
   call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
@@ -1405,6 +1421,48 @@ program test_cuda_executor
   call expect_equal_i64("cuda payload replay should preserve artifact lineage with malformed default pack sidecars", &
     artifact_hash, payload_only_decode_artifact_hash)
   call expect_equal_i32("cuda payload replay should preserve token identity with malformed default pack sidecars", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
+  call write_pack_dispatch_buffer_fixture(trim(cache_root) // "/" // trim(decode_dispatch_buffer_path), 4_i32, &
+    2222222222222222_i64)
+  open(unit=13, file=trim(cache_root) // "/" // trim(decode_usage_path), status="replace", action="write")
+  write(13, "(A)") "candidate=decode_usage;stage=4;format=cuda_bf16_decode_plan_v1;" // &
+    "pack_dependency=cuda_import_weight_pack_v1;" // &
+    "pack_use_kind=cuda_decode_pack_usage_v1;" // &
+    "pack_dispatch_kind=cuda_pack_dispatch_v1;" // &
+    "pack_ref_tile_cache=" // pack_tile_cache_path // ";" // &
+    "pack_ref_tile_buffer=" // pack_tile_buffer_path // ";" // &
+    "pack_dispatch_buffer=" // decode_dispatch_buffer_path // ";" // &
+    "pack_span_root=" // import_bundle_root // ";" // &
+    "pack_use1=token_embeddings|embedding_table|offset=0|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch1=offset=0|bytes=1089994752|role=1|layout=1;" // &
+    "pack_span1=weights/token_embeddings.bin|sample_bytes=64;" // &
+    "pack_use2=decoder_blocks|decoder_stack|offset=1089994752|bytes=25690112|layout=packed;" // &
+    "pack_dispatch2=offset=1089994752|bytes=25690112|role=2|layout=2;" // &
+    "pack_span2=weights/decoder_blocks.bin|sample_bytes=64;" // &
+    "pack_use3=final_norm|normalization|offset=1115684864|bytes=14336|layout=vector;" // &
+    "pack_dispatch3=offset=1115684864|bytes=14336|role=3|layout=3;" // &
+    "pack_span3=weights/final_norm.bin|sample_bytes=64;" // &
+    "pack_use4=lm_head|token_projection|offset=1115699200|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch4=offset=1115699200|bytes=1089994752|role=4|layout=1;" // &
+    "pack_span4=weights/lm_head.bin|sample_bytes=64;" // &
+    "pack_dispatch_count=4;pack_use_count=4;pack_use_bytes=2205693952;" // &
+    "pack_use_first_offset=0;pack_use_last_offset=1115699200;" // &
+    "pack_use_last_bytes=1089994752;pack_use_hash=2222222222222222"
+  close(13)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore malformed pack buffers behind dispatch sidecars", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with malformed dispatch-linked pack buffers", &
+    snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with malformed dispatch-linked pack buffers", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with malformed dispatch-linked pack buffers", &
     token_value_with_other_context, token_value_with_payload_fallback)
 
   open(unit=12, file=trim(cache_root) // "/" // trim(decode_path), status="replace", action="write")

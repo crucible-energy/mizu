@@ -1234,6 +1234,47 @@ contains
     has_dependency = .true.
   end subroutine build_resolved_pack_usage_dependency_hash
 
+  subroutine build_canonical_pack_usage_hash(pack_usage, usage_hash, has_hash)
+    type(cuda_pack_usage_profile), intent(in) :: pack_usage
+    integer(i64), intent(out)                 :: usage_hash
+    logical, intent(out)                      :: has_hash
+    integer(i32)                              :: entry_index
+
+    usage_hash = 0_i64
+    has_hash = .false.
+    if (.not. pack_usage%has_usage) return
+    if (pack_usage%usage_count <= 0_i32) return
+
+    usage_hash = combine_positive_hash64(1_i64, positive_hash64("cuda_canonical_pack_usage_v1"))
+    usage_hash = combine_positive_hash64(usage_hash, int(pack_usage%usage_count, kind=i64))
+    usage_hash = combine_positive_hash64(usage_hash, pack_usage%usage_bytes)
+    usage_hash = combine_positive_hash64(usage_hash, pack_usage%first_pack_offset)
+    usage_hash = combine_positive_hash64(usage_hash, pack_usage%last_pack_offset)
+    usage_hash = combine_positive_hash64(usage_hash, pack_usage%last_pack_bytes)
+
+    do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
+      usage_hash = combine_positive_hash64(usage_hash, int(pack_usage%entry_pack_indices(entry_index), kind=i64))
+      usage_hash = combine_positive_hash64(usage_hash, pack_usage%entry_offsets(entry_index))
+      usage_hash = combine_positive_hash64(usage_hash, pack_usage%entry_bytes(entry_index))
+      usage_hash = combine_positive_hash64(usage_hash, int(pack_usage%role_codes(entry_index), kind=i64))
+      usage_hash = combine_positive_hash64(usage_hash, int(pack_usage%layout_codes(entry_index), kind=i64))
+      usage_hash = combine_positive_hash64(usage_hash, pack_usage%entry_span_hashes(entry_index))
+      usage_hash = combine_positive_hash64(usage_hash, pack_usage%entry_span_bytes(entry_index))
+      usage_hash = combine_positive_hash64(usage_hash, pack_usage%entry_materialized_hashes(entry_index))
+    end do
+
+    has_hash = .true.
+  end subroutine build_canonical_pack_usage_hash
+
+  subroutine canonicalize_pack_usage_hash(pack_usage)
+    type(cuda_pack_usage_profile), intent(inout) :: pack_usage
+    integer(i64)                                 :: canonical_hash
+    logical                                      :: has_canonical_hash
+
+    call build_canonical_pack_usage_hash(pack_usage, canonical_hash, has_canonical_hash)
+    if (has_canonical_hash) pack_usage%usage_hash = canonical_hash
+  end subroutine canonicalize_pack_usage_hash
+
   subroutine extract_payload_pack_usage_profile(payload_text, pack_usage)
     character(len=*), intent(in)        :: payload_text
     type(cuda_pack_usage_profile), intent(out) :: pack_usage
@@ -1471,43 +1512,45 @@ contains
     integer(i32)                                 :: tile_byte_count
     integer(i8)                                  :: tile_bytes(MAX_CUDA_PACK_TILE_BYTES)
 
-    if (len_trim(pack_usage%span_root) == 0) return
-
-    do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
-      if (len_trim(pack_usage%entry_span_paths(entry_index)) == 0) cycle
-      call resolve_import_span_record(trim(pack_usage%span_root), trim(pack_usage%entry_span_paths(entry_index)), &
-        pack_usage%entry_span_bytes(entry_index), span_hash, actual_sample_bytes, span_sample_bytes)
-      pack_usage%entry_span_hashes(entry_index) = span_hash
-      if (actual_sample_bytes > 0_i64) then
-        pack_usage%entry_span_bytes(entry_index) = actual_sample_bytes
-        pack_usage%entry_span_sample_sizes(entry_index) = min(MAX_CUDA_SPAN_SAMPLE_BYTES, int(actual_sample_bytes, kind=i32))
-        pack_usage%entry_span_samples(:, entry_index) = 0_i8
-        if (pack_usage%entry_span_sample_sizes(entry_index) > 0_i32) then
-          pack_usage%entry_span_samples(1:pack_usage%entry_span_sample_sizes(entry_index), entry_index) = &
-            span_sample_bytes(1:pack_usage%entry_span_sample_sizes(entry_index))
+    if (len_trim(pack_usage%span_root) > 0) then
+      do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
+        if (len_trim(pack_usage%entry_span_paths(entry_index)) == 0) cycle
+        call resolve_import_span_record(trim(pack_usage%span_root), trim(pack_usage%entry_span_paths(entry_index)), &
+          pack_usage%entry_span_bytes(entry_index), span_hash, actual_sample_bytes, span_sample_bytes)
+        pack_usage%entry_span_hashes(entry_index) = span_hash
+        if (actual_sample_bytes > 0_i64) then
+          pack_usage%entry_span_bytes(entry_index) = actual_sample_bytes
+          pack_usage%entry_span_sample_sizes(entry_index) = min(MAX_CUDA_SPAN_SAMPLE_BYTES, int(actual_sample_bytes, kind=i32))
+          pack_usage%entry_span_samples(:, entry_index) = 0_i8
+          if (pack_usage%entry_span_sample_sizes(entry_index) > 0_i32) then
+            pack_usage%entry_span_samples(1:pack_usage%entry_span_sample_sizes(entry_index), entry_index) = &
+              span_sample_bytes(1:pack_usage%entry_span_sample_sizes(entry_index))
+          end if
         end if
-      end if
-      call build_cuda_pack_page_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
-        pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), span_hash, &
-        pack_usage%entry_span_samples(:, entry_index), int(pack_usage%entry_span_sample_sizes(entry_index), kind=i64), &
-        page_hash, page_word_count, page_words)
-      pack_usage%entry_page_hashes(entry_index) = page_hash
-      pack_usage%entry_page_word_counts(entry_index) = page_word_count
-      pack_usage%entry_page_words(:, entry_index) = 0_i32
-      if (page_word_count > 0_i32) then
-        pack_usage%entry_page_words(1:page_word_count, entry_index) = page_words(1:page_word_count)
-      end if
-      call build_cuda_pack_tile_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
-        pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), &
-        pack_usage%entry_span_samples(:, entry_index), int(pack_usage%entry_span_sample_sizes(entry_index), kind=i64), &
-        tile_hash, tile_byte_count, tile_bytes)
-      pack_usage%entry_tile_hashes(entry_index) = tile_hash
-      pack_usage%entry_tile_byte_counts(entry_index) = tile_byte_count
-      pack_usage%entry_tile_bytes(:, entry_index) = 0_i8
-      if (tile_byte_count > 0_i32) then
-        pack_usage%entry_tile_bytes(1:tile_byte_count, entry_index) = tile_bytes(1:tile_byte_count)
-      end if
-    end do
+        call build_cuda_pack_page_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
+          pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), span_hash, &
+          pack_usage%entry_span_samples(:, entry_index), int(pack_usage%entry_span_sample_sizes(entry_index), kind=i64), &
+          page_hash, page_word_count, page_words)
+        pack_usage%entry_page_hashes(entry_index) = page_hash
+        pack_usage%entry_page_word_counts(entry_index) = page_word_count
+        pack_usage%entry_page_words(:, entry_index) = 0_i32
+        if (page_word_count > 0_i32) then
+          pack_usage%entry_page_words(1:page_word_count, entry_index) = page_words(1:page_word_count)
+        end if
+        call build_cuda_pack_tile_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
+          pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), &
+          pack_usage%entry_span_samples(:, entry_index), int(pack_usage%entry_span_sample_sizes(entry_index), kind=i64), &
+          tile_hash, tile_byte_count, tile_bytes)
+        pack_usage%entry_tile_hashes(entry_index) = tile_hash
+        pack_usage%entry_tile_byte_counts(entry_index) = tile_byte_count
+        pack_usage%entry_tile_bytes(:, entry_index) = 0_i8
+        if (tile_byte_count > 0_i32) then
+          pack_usage%entry_tile_bytes(1:tile_byte_count, entry_index) = tile_bytes(1:tile_byte_count)
+        end if
+      end do
+    end if
+
+    call canonicalize_pack_usage_hash(pack_usage)
   end subroutine hydrate_payload_pack_span_profile
 
   subroutine hydrate_cached_pack_span_profile(cache_root, artifact_path, payload_text, pack_usage, loaded_cached)
@@ -2037,6 +2080,7 @@ contains
     end do
 
     call refresh_compact_pack_usage_summary(pack_usage)
+    call canonicalize_pack_usage_hash(pack_usage)
 
     if (expected_entry_count > 0_i32) then
       do entry_index = 1_i32, expected_entry_count
@@ -2095,6 +2139,7 @@ contains
     integer(i32)                                 :: decoded_tile_byte_count
     integer(i32)                                 :: live_entry_count
     integer(i32)                                 :: expected_entry_count
+    integer(i64)                                 :: preserved_usage_hash
     integer(i64)                                 :: entry_offset
     integer(i64)                                 :: entry_bytes
     integer(i64)                                 :: span_hash
@@ -2139,9 +2184,14 @@ contains
     if ((parsed_header_bytes + ((parsed_entry_count - 1_i32) * parsed_entry_bytes) + CUDA_EXEC_BUFFER_ENTRY_BYTES) > &
         buffer_count) return
 
+    preserved_usage_hash = pack_usage%usage_hash
     pack_usage = cuda_pack_usage_profile()
     pack_usage%usage_count = max(0_i32, parsed_usage_count)
-    pack_usage%usage_hash = parsed_usage_hash
+    if (preserved_usage_hash /= 0_i64) then
+      pack_usage%usage_hash = preserved_usage_hash
+    else
+      pack_usage%usage_hash = parsed_usage_hash
+    end if
     pack_usage%usage_bytes = max(0_i64, parsed_usage_bytes)
     pack_usage%first_pack_offset = max(0_i64, parsed_first_offset)
     pack_usage%last_pack_offset = max(0_i64, parsed_last_offset)
@@ -2247,10 +2297,7 @@ contains
       pack_usage = cuda_pack_usage_profile()
       return
     end if
-    if (pack_usage%usage_hash == 0_i64 .and. pack_usage%has_usage) then
-      call build_resolved_pack_usage_dependency_hash(pack_usage, pack_usage%usage_hash, applied_ok)
-      if (.not. applied_ok) pack_usage%usage_hash = positive_hash64("cuda_exec_buffer")
-    end if
+    call canonicalize_pack_usage_hash(pack_usage)
     pack_usage%has_usage = (pack_usage%usage_count > 0_i32)
     applied_ok = pack_usage%has_usage
   end subroutine hydrate_pack_execution_buffer
@@ -2346,6 +2393,7 @@ contains
     end do
 
     call refresh_compact_pack_usage_summary(pack_usage)
+    call canonicalize_pack_usage_hash(pack_usage)
   end subroutine canonicalize_pack_usage_from_pack_buffer
 
   subroutine extract_pack_span_buffer_record(buffer_bytes, buffer_count, requested_entry_index, resolved_pack_index, &

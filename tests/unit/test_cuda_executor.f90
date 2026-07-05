@@ -44,6 +44,7 @@ program test_cuda_executor
   integer(i32) :: token_value_with_pack_buffer_only
   integer(i32) :: token_value_without_pack_cache
   integer(i32) :: token_value_with_payload_fallback
+  integer(i32) :: token_value_with_exec_buffer_baseline
   integer(i32) :: context_byte_count_a
   integer(i32) :: context_byte_count_b
   integer(i32) :: decode_context_byte_count
@@ -64,6 +65,7 @@ program test_cuda_executor
   integer(i64) :: binary_only_decode_artifact_hash
   integer(i64) :: pack_buffer_only_decode_artifact_hash
   integer(i64) :: payload_only_decode_artifact_hash
+  integer(i64) :: payload_exec_buffer_decode_artifact_hash
   integer(i64) :: pack_usage_hash
   integer(i64) :: pack_usage_bytes
   integer(i64) :: first_pack_offset
@@ -1189,8 +1191,8 @@ program test_cuda_executor
     last_pack_offset, 1115699200_i64)
   call expect_equal_i64("cuda exec-buffer-only replay should preserve the last packed bytes", &
     last_pack_bytes, 1089994752_i64)
-  call expect_equal_i64("cuda exec-buffer-only replay should preserve the staged usage hash", &
-    pack_usage_hash, 2222222222222222_i64)
+  call expect_true("cuda exec-buffer-only replay should retain a nonzero resolved usage hash", &
+    pack_usage_hash /= 0_i64)
   call extract_cuda_context_pack_dispatch_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, &
     pack_dispatch_offsets, pack_dispatch_bytes, pack_dispatch_role_codes, pack_dispatch_layout_codes, &
     pack_dispatch_count, snapshot_valid)
@@ -1305,6 +1307,39 @@ program test_cuda_executor
     artifact_hash, payload_only_decode_artifact_hash)
   call expect_equal_i32("cuda payload replay should preserve token identity with a stale usage hash summary", &
     token_value_with_other_context, token_value_with_payload_fallback)
+
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_usage_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda stale usage-summary cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+  call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
+    import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, &
+    pack_tile_buffer_path, .false.)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_exec_buffer_baseline, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda exec-buffer replay baseline should still succeed", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    payload_exec_buffer_decode_artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, &
+    rolling_state_digest, summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, &
+    snapshot_valid)
+  call expect_true("cuda exec-buffer replay baseline should preserve readable lineage", snapshot_valid)
+  call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
+    import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 3333333333333333_i64, &
+    pack_tile_buffer_path, .false.)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda exec-buffer replay should ignore stale usage hashes in valid exec buffers", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda exec-buffer replay should keep readable lineage with a stale exec-buffer usage hash", snapshot_valid)
+  call expect_equal_i64("cuda exec-buffer replay should preserve artifact lineage with a stale exec-buffer usage hash", &
+    artifact_hash, payload_exec_buffer_decode_artifact_hash)
+  call expect_equal_i32("cuda exec-buffer replay should preserve token identity with a stale exec-buffer usage hash", &
+    token_value_with_other_context, token_value_with_exec_buffer_baseline)
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_exec_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda stale exec-buffer cleanup should succeed", int(shell_status, kind=i32), 0_i32)
 
   call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path))
   call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &

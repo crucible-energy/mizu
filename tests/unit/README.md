@@ -104,7 +104,8 @@ bodies.
   - validates host scratch buffers are aligned, high-water growth preserves
     existing bytes, and smaller reservations do not allocate again
 - `test_session_staging.f90`
-  - validates attached token content is copied into session staging state
+  - validates attached token content is copied into session staging state and
+    preserved when callers later mutate or append new token buffers
   - validates copied modal bytes and content hashes are retained until clear
   - validates prefill produces a persistent live-context hash and decode
     advances it while retaining emitted tokens

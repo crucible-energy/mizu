@@ -13,6 +13,8 @@ program test_session_staging
   integer(i32)        :: status_code
   integer(i32)        :: tokens_a(3)
   integer(i32)        :: tokens_b(2)
+  integer(i32)        :: expected_tokens_a(3)
+  integer(i32)        :: expected_tokens_ab(5)
   integer(i32)        :: emitted_tokens(1)
   integer(i8)         :: context_bytes_a(6)
   integer(i8)         :: context_bytes_b(6)
@@ -21,6 +23,8 @@ program test_session_staging
 
   tokens_a = [11_i32, 22_i32, 33_i32]
   tokens_b = [44_i32, 55_i32]
+  expected_tokens_a = tokens_a
+  expected_tokens_ab = [tokens_a, tokens_b]
   emitted_tokens = [101_i32]
   context_bytes_a = [11_i8, 22_i8, 33_i8, 44_i8, 55_i8, 66_i8]
   context_bytes_b = [21_i8, 32_i8, 43_i8, 54_i8, 65_i8, 76_i8]
@@ -32,12 +36,16 @@ program test_session_staging
   call expect_equal_i64("staged token count should reflect first batch", session%staged_token_count, 3_i64)
   call expect_true("staged tokens should allocate", allocated(session%staged_tokens))
   call expect_equal_i32("staged tokens should retain first value", session%staged_tokens(1), 11_i32)
+  tokens_a = [-1_i32, -1_i32, -1_i32]
+  call expect_true("staged tokens should not alias caller storage", all(session%staged_tokens == expected_tokens_a))
   call expect_true("staged token hash should become nonzero", session%staged_token_hash /= 0_i64)
 
   call stage_tokens(session, 2_i64, status_code, tokens_b)
   call expect_equal_i32("second staged token call should succeed", status_code, MIZU_STATUS_OK)
   call expect_equal_i64("staged token count should append", session%staged_token_count, 5_i64)
   call expect_equal_i32("staged tokens should retain appended value", session%staged_tokens(5), 55_i32)
+  tokens_b = [-2_i32, -2_i32]
+  call expect_true("staged token batches should preserve append order", all(session%staged_tokens == expected_tokens_ab))
 
   call stage_modal_input(session, status_code, 4_i64, 1_i32, 1_i32, "image", modal_bytes)
   call expect_equal_i32("staged modal input should succeed", status_code, MIZU_STATUS_OK)
@@ -58,6 +66,7 @@ program test_session_staging
   call expect_equal_i64("staged token hash should clear", session%staged_token_hash, 0_i64)
   call expect_equal_i64("staged modal hash should clear", session%staged_modal_hash, 0_i64)
 
+  tokens_a = expected_tokens_a
   call stage_tokens(session, 3_i64, status_code, tokens_a)
   call expect_equal_i32("restaged token call should succeed", status_code, MIZU_STATUS_OK)
   call stage_modal_input(session, status_code, 4_i64, 1_i32, 1_i32, "image", modal_bytes)

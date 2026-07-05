@@ -84,6 +84,7 @@ CONTRACT_SMOKES := \
 
 CONTRACT_BINS := \
 	$(TEST_DIR)/test_backend_availability \
+	$(TEST_DIR)/test_backend_routing_contracts \
 	$(TEST_DIR)/test_handle_arena_capacity \
 	$(TEST_DIR)/test_handle_lifecycle \
 	$(TEST_DIR)/test_model_open_failures \
@@ -400,6 +401,25 @@ $(TEST_DIR)/test_backend_availability: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $
 		$(BACKEND_F90) \
 		$(CAPI_F90) \
 		$(TEST_DIR)/test_backend_availability.o \
+		$(APPLE_BRIDGE_OBJ) \
+		$(CUDA_BRIDGE_OBJ) \
+		$(APPLE_BRIDGE_LINK_LIBS) \
+		$(CUDA_BRIDGE_LINK_LIBS)
+
+$(TEST_DIR)/test_backend_routing_contracts.o: tests/contract/test_backend_routing_contracts.c | $(TEST_DIR)
+	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+$(TEST_DIR)/test_backend_routing_contracts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
+	$(CAPI_F90) $(TEST_DIR)/test_backend_routing_contracts.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
+	mkdir -p $(TEST_DIR)/backend_routing_contracts_mods
+	$(FC) $(FFLAGS) -J $(TEST_DIR)/backend_routing_contracts_mods -I $(TEST_DIR)/backend_routing_contracts_mods -o $@ \
+		$(COMMON_F90) \
+		$(MODEL_F90) \
+		$(CACHE_F90) \
+		$(RUNTIME_F90) \
+		$(BACKEND_F90) \
+		$(CAPI_F90) \
+		$(TEST_DIR)/test_backend_routing_contracts.o \
 		$(APPLE_BRIDGE_OBJ) \
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \

@@ -5,7 +5,8 @@ program test_apple_planner
                                   MIZU_MODEL_FAMILY_QWEN3_5, MIZU_MODEL_FAMILY_GEMMA4, &
                                   MIZU_BACKEND_FAMILY_APPLE, MIZU_EXEC_ROUTE_ANE, MIZU_EXEC_ROUTE_METAL, &
                                   MIZU_BACKEND_MASK_NONE, MIZU_BACKEND_MASK_APPLE_ANE, &
-                                  MIZU_BACKEND_MASK_APPLE_METAL
+                                  MIZU_BACKEND_MASK_APPLE_METAL, &
+                                  MIZU_FALLBACK_REASON_UNSUPPORTED_SHAPE
   use mod_backend_contract, only: plan_request, planner_result, initialize_plan_request, OP_FAMILY_NONE, &
                                   OP_FAMILY_PROJECTOR, OP_FAMILY_PREFILL, planner_result_is_success
   use mod_apple_planner,    only: APPLE_ARTIFACT_PAYLOAD_LEN, plan_apple_stage, &
@@ -76,6 +77,27 @@ program test_apple_planner
   call expect_equal_text("apple prefill planner should use the Metal prefill format", &
     trim(result%chosen_plan%pack_format), "apple_metal_bf16_prefill_plan_v1")
   call expect_true("apple prefill planner should reserve nonzero workspace", result%chosen_plan%workspace_bytes > 0_i64)
+
+  call initialize_plan_request(request, MIZU_STAGE_PREFILL, OP_FAMILY_PREFILL, MIZU_MODEL_FAMILY_GEMMA4, &
+    ior(MIZU_BACKEND_MASK_APPLE_ANE, MIZU_BACKEND_MASK_APPLE_METAL))
+  request%shape_signature = [0_i64, 65_i64, 1_i64, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64]
+  request%token_count = 65_i64
+  call plan_apple_stage(request, result, status_code)
+  call expect_equal_i32("apple planner should accept oversized prefill requests when Metal is allowed", &
+    status_code, MIZU_STATUS_OK)
+  call expect_equal_i32("apple oversized prefill should fall back to Metal", &
+    result%chosen_plan%execution_route, MIZU_EXEC_ROUTE_METAL)
+  call expect_true("apple oversized prefill should report fallback", result%requires_fallback)
+  call expect_equal_i32("apple oversized prefill should report unsupported-shape fallback", &
+    result%fallback_reason, MIZU_FALLBACK_REASON_UNSUPPORTED_SHAPE)
+
+  call initialize_plan_request(request, MIZU_STAGE_PREFILL, OP_FAMILY_PREFILL, MIZU_MODEL_FAMILY_GEMMA4, &
+    MIZU_BACKEND_MASK_APPLE_ANE)
+  request%shape_signature = [0_i64, 65_i64, 1_i64, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64]
+  request%token_count = 65_i64
+  call plan_apple_stage(request, result, status_code)
+  call expect_equal_i32("apple planner should reject oversized prefill requests when Metal is disallowed", &
+    status_code, MIZU_STATUS_INVALID_ARGUMENT)
 
   call initialize_plan_request(request, MIZU_STAGE_PREFILL, OP_FAMILY_PREFILL, MIZU_MODEL_FAMILY_QWEN3_5, &
     MIZU_BACKEND_MASK_NONE)

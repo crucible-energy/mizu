@@ -17,6 +17,15 @@ These suites cover the `API-C*` portion of
     when the requested backend family is unavailable on the runtime
   - verifies the runtime surfaces a useful last-error string for that case
   - verifies forcing Apple availability makes the same model-open request pass
+- `test_backend_routing_contracts.c`
+  - verifies ANE-only oversized prefill requests fail with
+    `MIZU_STATUS_NO_VALID_PLAN`
+  - verifies dual-route Apple prefill reports an honest Metal fallback with an
+    unsupported-shape reason while preserving the ANE projector stage
+  - verifies failed planner selection leaves public session state and
+    `mizu_session_get_last_report` unchanged
+  - verifies `mizu_session_get_last_report` exactly mirrors the most recent
+    `prefill`, `decode`, `park`, and `resume` report
 - `test_model_open_failures.c`
   - opens intentionally broken model fixtures through the public API
   - verifies malformed manifest and broken import-bundle roots fail cleanly

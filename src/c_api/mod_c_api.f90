@@ -1097,12 +1097,14 @@ contains
     integer(i32) :: prefill_selection_mode
     integer(i32) :: projector_backend_family
     integer(i32) :: projector_route
+    integer(i32) :: projector_fallback_reason
     integer(i32) :: projector_placeholder_count
     integer(i32) :: prefill_context_byte_count
     integer(i8)  :: prefill_context_bytes(MAX_LIVE_CONTEXT_BYTES)
     integer(i64) :: prefill_context_artifact_hash
     integer(i32) :: prefill_backend_family
     integer(i32) :: prefill_route
+    integer(i32) :: prefill_fallback_reason
     character(len=MAX_PATH_LEN) :: staged_modal_slot_name_before
     character(len=MAX_CACHE_KEY_LEN) :: projector_optimization_key_text
     character(len=MAX_CACHE_KEY_LEN) :: projector_candidate_key_text
@@ -1175,8 +1177,13 @@ contains
       call prepare_projector_stage_candidate(runtime, optimization_store, model, staged_modal_byte_count_before, &
         staged_modal_kind_before, staged_modal_dtype_before, staged_modal_slot_name_before, &
         projector_optimization_key_text, projector_candidate_key_text, projector_plan_id, &
-        projector_selection_mode, projector_backend_family, projector_route, projector_artifact_metadata, &
-        projector_placeholder_count)
+        projector_selection_mode, projector_backend_family, projector_route, projector_fallback_reason, &
+        projector_artifact_metadata, projector_placeholder_count, status_code)
+      if (status_code /= MIZU_STATUS_OK) then
+        call set_session_owner_runtime_error(session, status_code, "no valid projector route is available")
+        mizu_session_prefill = int(status_code, kind=c_int32_t)
+        return
+      end if
 
       call reserve_stage_workspace(runtime, projector_artifact_metadata, projector_workspace_reserved, status_code)
       if (status_code /= MIZU_STATUS_OK) then
@@ -1212,7 +1219,7 @@ contains
         trim(projector_candidate_key_text), projector_plan_id, projector_selection_mode, projector_elapsed_us, &
         projector_artifact_metadata, projector_cache_flags)
       projector_report = make_stage_report(MIZU_STAGE_PROJECTOR, projector_backend_family, &
-        projector_route, MIZU_FALLBACK_REASON_NONE, projector_selection_mode, prefill_cold_state, &
+        projector_route, projector_fallback_reason, projector_selection_mode, prefill_cold_state, &
         projector_cache_flags, projector_plan_id, projector_elapsed_us)
     else
       projector_report = execution_report()
@@ -1222,8 +1229,14 @@ contains
     call prepare_plan_stage_candidate(runtime, optimization_store, model, MIZU_STAGE_PREFILL, &
       OP_FAMILY_PREFILL, [max(0_i64, kv_before), max(0_i64, staged_tokens_before), &
       max(0_i64, int(staged_modal_before, kind=i64))], max(0_i64, staged_tokens_before), &
-      prefill_optimization_key_text, prefill_candidate_key_text, prefill_plan_id, &
-      prefill_selection_mode, prefill_backend_family, prefill_route, prefill_artifact_metadata)
+      model%info%allowed_backend_mask, prefill_optimization_key_text, prefill_candidate_key_text, &
+      prefill_plan_id, prefill_selection_mode, prefill_backend_family, prefill_route, &
+      prefill_fallback_reason, prefill_artifact_metadata, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "no valid prefill route is available")
+      mizu_session_prefill = int(status_code, kind=c_int32_t)
+      return
+    end if
 
     call reserve_stage_workspace(runtime, prefill_artifact_metadata, prefill_workspace_reserved, status_code)
     if (status_code /= MIZU_STATUS_OK) then
@@ -1324,7 +1337,7 @@ contains
       trim(prefill_candidate_key_text), prefill_plan_id, prefill_selection_mode, prefill_elapsed_us, &
       prefill_artifact_metadata, prefill_cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_PREFILL, prefill_backend_family, prefill_route, &
-      MIZU_FALLBACK_REASON_NONE, prefill_selection_mode, prefill_cold_state, &
+      prefill_fallback_reason, prefill_selection_mode, prefill_cold_state, &
       prefill_cache_flags, prefill_plan_id, prefill_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, projector_report)
 
@@ -1357,6 +1370,7 @@ contains
     integer(i64) :: decode_elapsed_us
     integer(i64) :: stage_started_us
     integer(i64) :: decode_shape_band
+    integer(i64) :: decode_allowed_backend_mask
     integer(i32) :: decode_stop_reason
     integer(i32) :: updated_context_byte_count
     integer(i8)  :: updated_context_bytes(MAX_LIVE_CONTEXT_BYTES)
@@ -1364,6 +1378,7 @@ contains
     integer(i32) :: selection_mode
     integer(i32) :: report_backend_family
     integer(i32) :: report_route
+    integer(i32) :: decode_fallback_reason
     integer(i32) :: emitted_tokens_local(MAX_RECENT_OUTPUT_TOKENS)
     character(len=MAX_CACHE_KEY_LEN) :: decode_optimization_key_text
     character(len=MAX_CACHE_KEY_LEN) :: decode_candidate_key_text
@@ -1456,11 +1471,27 @@ contains
     updated_context_bytes = 0_i8
     decode_context_artifact_hash = 0_i64
     decode_shape_band = decode_kv_shape_band(kv_before)
+    decode_allowed_backend_mask = model%info%allowed_backend_mask
+    if (session%has_live_context .and. session%live_context_execution_route /= MIZU_EXEC_ROUTE_NONE) then
+      decode_allowed_backend_mask = iand(decode_allowed_backend_mask, &
+        execution_route_backend_mask(session%live_context_execution_route))
+    end if
+    if (decode_allowed_backend_mask == MIZU_BACKEND_MASK_NONE) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_STATE, &
+        "live context route is no longer allowed for decode")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_STATE, kind=c_int32_t)
+      return
+    end if
     call prepare_plan_stage_candidate(runtime, optimization_store, model, MIZU_STAGE_DECODE, &
       OP_FAMILY_DECODE, [decode_shape_band, max(0_i64, int(options%token_budget, kind=i64)), 1_i64], &
-      max(0_i64, int(options%token_budget, kind=i64)), decode_optimization_key_text, &
-      decode_candidate_key_text, decode_plan_id, selection_mode, report_backend_family, report_route, &
-      decode_artifact_metadata)
+      max(0_i64, int(options%token_budget, kind=i64)), decode_allowed_backend_mask, &
+      decode_optimization_key_text, decode_candidate_key_text, decode_plan_id, selection_mode, &
+      report_backend_family, report_route, decode_fallback_reason, decode_artifact_metadata, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "no valid decode route is available")
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
 
     if (session%has_live_context .and. session%live_context_producer_stage == MIZU_STAGE_DECODE) then
       if (report_backend_family /= session%live_context_backend_family .or. &
@@ -1556,7 +1587,7 @@ contains
       trim(decode_candidate_key_text), decode_plan_id, selection_mode, decode_elapsed_us, &
       decode_artifact_metadata, decode_cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_DECODE, report_backend_family, report_route, &
-      MIZU_FALLBACK_REASON_NONE, selection_mode, MIZU_COLD_STATE_WARM, &
+      decode_fallback_reason, selection_mode, MIZU_COLD_STATE_WARM, &
       decode_cache_flags, decode_plan_id, decode_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
 
@@ -3356,9 +3387,10 @@ contains
   end function hex_digit_value
 
   subroutine prepare_plan_stage_candidate(runtime, optimization_store, model, stage_kind, op_family, &
-                                          shape, token_count, optimization_key_text, &
+                                          shape, token_count, allowed_backend_mask, optimization_key_text, &
                                           candidate_key_text, plan_id, selection_mode, &
-                                          backend_family, execution_route, artifact_metadata)
+                                          backend_family, execution_route, fallback_reason, &
+                                          artifact_metadata, status_code)
     type(runtime_state), intent(in)                  :: runtime
     type(runtime_optimization_store), intent(inout)  :: optimization_store
     type(model_state), intent(in)                    :: model
@@ -3366,13 +3398,16 @@ contains
     integer(i32), intent(in)                         :: op_family
     integer(i64), intent(in)                         :: shape(3)
     integer(i64), intent(in)                         :: token_count
+    integer(i64), intent(in)                         :: allowed_backend_mask
     character(len=*), intent(out)                    :: optimization_key_text
     character(len=*), intent(out)                    :: candidate_key_text
     integer(i64), intent(out)                        :: plan_id
     integer(i32), intent(out)                        :: selection_mode
     integer(i32), intent(out)                        :: backend_family
     integer(i32), intent(out)                        :: execution_route
+    integer(i32), intent(out)                        :: fallback_reason
     type(artifact_metadata_record), intent(out)      :: artifact_metadata
+    integer(i32), intent(out)                        :: status_code
     type(model_manifest)                             :: manifest
     type(plan_request)                               :: stage_request
     type(plan_cache_key)                             :: optimization_key
@@ -3381,30 +3416,38 @@ contains
     integer(i64)                                     :: candidate_plan_ids(3)
     integer(i32)                                     :: candidate_backend_families(3)
     integer(i32)                                     :: candidate_execution_routes(3)
+    integer(i32)                                     :: candidate_fallback_reasons(3)
     integer(i32)                                     :: optimization_backend_family
     integer(i32)                                     :: candidate_count
     integer(i32)                                     :: candidate_index
+    integer(i32)                                     :: selected_candidate_index
 
     call populate_manifest_identity(model, manifest)
-    call enumerate_candidate_routes(model%info%allowed_backend_mask, candidate_backend_families, &
-      candidate_execution_routes, candidate_count)
     optimization_key_text = ""
     candidate_key_text = ""
     candidate_key_texts = ""
     candidate_plan_ids = 0_i64
-    optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
+    backend_family = MIZU_BACKEND_FAMILY_NONE
+    execution_route = MIZU_EXEC_ROUTE_NONE
+    fallback_reason = MIZU_FALLBACK_REASON_NONE
+    artifact_metadata = artifact_metadata_record()
+    status_code = MIZU_STATUS_OK
 
     call initialize_plan_request(stage_request, stage_kind, op_family, model%info%model_family, &
-      model%info%allowed_backend_mask)
+      allowed_backend_mask)
     stage_request%shape_signature = 0_i64
     stage_request%shape_signature(1:3) = shape
     stage_request%token_count = max(0_i64, token_count)
     stage_request%planner_version_hint = 1_i64
+    call collect_plannable_stage_candidates(stage_request, candidate_backend_families, candidate_execution_routes, &
+      candidate_fallback_reasons, candidate_count, status_code)
+    if (status_code /= MIZU_STATUS_OK) return
+    optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
 
     call build_plan_cache_key(manifest, "unbound", "logical", stage_kind, optimization_backend_family, &
       MIZU_EXEC_ROUTE_NONE, MIZU_DTYPE_BF16, 3_i32, shape, optimization_key)
     optimization_key_text = append_allowed_mask_identity(trim(optimization_key%key_text), &
-      model%info%allowed_backend_mask)
+      allowed_backend_mask)
     optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
     optimization_key_text = append_import_stage_usage_identity(trim(optimization_key_text), stage_kind, model)
 
@@ -3421,6 +3464,11 @@ contains
     call resolve_stage_candidate(runtime, optimization_store, trim(optimization_key_text), candidate_count, &
       candidate_backend_families, candidate_execution_routes, candidate_plan_ids, candidate_key_texts, &
       candidate_key_text, plan_id, selection_mode, backend_family, execution_route)
+    selected_candidate_index = candidate_index_for_route(candidate_backend_families, candidate_execution_routes, &
+      candidate_count, backend_family, execution_route)
+    if (selected_candidate_index > 0_i32) then
+      fallback_reason = candidate_fallback_reasons(selected_candidate_index)
+    end if
     artifact_metadata = build_stage_artifact_metadata(stage_kind, backend_family, execution_route, &
       trim(candidate_key_text), stage_request, runtime%config%cache_root, model)
   end subroutine prepare_plan_stage_candidate
@@ -3479,7 +3527,7 @@ contains
                                                staged_modal_kind, staged_modal_dtype, staged_modal_slot_name, &
                                                optimization_key_text, candidate_key_text, plan_id, &
                                                selection_mode, backend_family, execution_route, &
-                                               artifact_metadata, placeholder_count)
+                                               fallback_reason, artifact_metadata, placeholder_count, status_code)
     type(runtime_state), intent(in)                 :: runtime
     type(runtime_optimization_store), intent(inout) :: optimization_store
     type(model_state), intent(in)                   :: model
@@ -3493,8 +3541,10 @@ contains
     integer(i32), intent(out)                       :: selection_mode
     integer(i32), intent(out)                       :: backend_family
     integer(i32), intent(out)                       :: execution_route
+    integer(i32), intent(out)                       :: fallback_reason
     type(artifact_metadata_record), intent(out)     :: artifact_metadata
     integer(i32), intent(out)                       :: placeholder_count
+    integer(i32), intent(out)                       :: status_code
     type(plan_request)                              :: stage_request
     type(model_manifest)                            :: manifest
     type(multimodal_cache_key)                      :: key
@@ -3505,8 +3555,10 @@ contains
     integer(i64)                                    :: candidate_plan_ids(3)
     integer(i32)                                    :: candidate_backend_families(3)
     integer(i32)                                    :: candidate_execution_routes(3)
+    integer(i32)                                    :: candidate_fallback_reasons(3)
     integer(i32)                                    :: candidate_count
     integer(i32)                                    :: candidate_index
+    integer(i32)                                    :: selected_candidate_index
 
     call populate_manifest_identity(model, manifest)
     slot_name = trim(staged_modal_slot_name)
@@ -3528,16 +3580,20 @@ contains
     stage_request%projector%embedding_dtype = manifest%projector%embedding_dtype
     stage_request%projector%slot_name = manifest%projector%slot_name
 
-    call enumerate_candidate_routes(model%info%allowed_backend_mask, candidate_backend_families, &
-      candidate_execution_routes, candidate_count)
     optimization_key_text = ""
     candidate_key_text = ""
     candidate_key_texts = ""
     candidate_plan_ids = 0_i64
+    fallback_reason = MIZU_FALLBACK_REASON_NONE
+    artifact_metadata = artifact_metadata_record()
+    status_code = MIZU_STATUS_OK
     call build_multimodal_cache_key(manifest, "unbound", trim(slot_name), modality_kind, &
       modality_dtype, max(0_i64, staged_modal_byte_count), key)
     optimization_key_text = append_allowed_mask_identity(trim(key%key_text), model%info%allowed_backend_mask)
     optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
+    call collect_plannable_stage_candidates(stage_request, candidate_backend_families, candidate_execution_routes, &
+      candidate_fallback_reasons, candidate_count, status_code)
+    if (status_code /= MIZU_STATUS_OK) return
 
     do candidate_index = 1_i32, candidate_count
       candidate_key_texts(candidate_index) = append_route_identity(trim(key%key_text), &
@@ -3549,10 +3605,91 @@ contains
     call resolve_stage_candidate(runtime, optimization_store, trim(optimization_key_text), candidate_count, &
       candidate_backend_families, candidate_execution_routes, candidate_plan_ids, candidate_key_texts, &
       candidate_key_text, plan_id, selection_mode, backend_family, execution_route)
+    selected_candidate_index = candidate_index_for_route(candidate_backend_families, candidate_execution_routes, &
+      candidate_count, backend_family, execution_route)
+    if (selected_candidate_index > 0_i32) then
+      fallback_reason = candidate_fallback_reasons(selected_candidate_index)
+    end if
     artifact_metadata = build_stage_artifact_metadata(MIZU_STAGE_PROJECTOR, backend_family, execution_route, &
       trim(candidate_key_text), stage_request, runtime%config%cache_root, model)
     placeholder_count = max(1_i32, stage_request%projector%placeholder_count)
   end subroutine prepare_projector_stage_candidate
+
+  subroutine collect_plannable_stage_candidates(stage_request, candidate_backend_families, &
+                                                candidate_execution_routes, candidate_fallback_reasons, &
+                                                candidate_count, status_code)
+    type(plan_request), intent(in)  :: stage_request
+    integer(i32), intent(out)       :: candidate_backend_families(:)
+    integer(i32), intent(out)       :: candidate_execution_routes(:)
+    integer(i32), intent(out)       :: candidate_fallback_reasons(:)
+    integer(i32), intent(out)       :: candidate_count
+    integer(i32), intent(out)       :: status_code
+    type(planner_result)            :: planning_result
+    integer(i32)                    :: raw_backend_families(3)
+    integer(i32)                    :: raw_execution_routes(3)
+    integer(i32)                    :: raw_candidate_count
+    integer(i32)                    :: raw_candidate_index
+    integer(i32)                    :: plan_status
+    integer(i32)                    :: selected_candidate_index
+
+    candidate_backend_families = MIZU_BACKEND_FAMILY_NONE
+    candidate_execution_routes = MIZU_EXEC_ROUTE_NONE
+    candidate_fallback_reasons = MIZU_FALLBACK_REASON_NONE
+    candidate_count = 0_i32
+    status_code = MIZU_STATUS_OK
+    raw_backend_families = MIZU_BACKEND_FAMILY_NONE
+    raw_execution_routes = MIZU_EXEC_ROUTE_NONE
+
+    call enumerate_candidate_routes(stage_request%allowed_backend_mask, raw_backend_families, &
+      raw_execution_routes, raw_candidate_count)
+
+    do raw_candidate_index = 1_i32, raw_candidate_count
+      call plan_stage_route_candidate(stage_request, raw_backend_families(raw_candidate_index), &
+        raw_execution_routes(raw_candidate_index), planning_result, plan_status)
+      if (plan_status /= MIZU_STATUS_OK) cycle
+      if (.not. planner_result_is_success(planning_result)) cycle
+
+      selected_candidate_index = candidate_index_for_route(candidate_backend_families, candidate_execution_routes, &
+        candidate_count, planning_result%chosen_plan%backend_family, planning_result%chosen_plan%execution_route)
+      if (selected_candidate_index > 0_i32) cycle
+      if (candidate_count >= size(candidate_backend_families)) exit
+
+      candidate_count = candidate_count + 1_i32
+      candidate_backend_families(candidate_count) = planning_result%chosen_plan%backend_family
+      candidate_execution_routes(candidate_count) = planning_result%chosen_plan%execution_route
+      candidate_fallback_reasons(candidate_count) = planning_result%fallback_reason
+    end do
+
+    if (candidate_count <= 0_i32) then
+      status_code = MIZU_STATUS_NO_VALID_PLAN
+    else
+      status_code = MIZU_STATUS_OK
+    end if
+  end subroutine collect_plannable_stage_candidates
+
+  subroutine plan_stage_route_candidate(stage_request, preferred_backend_family, preferred_execution_route, &
+                                        planning_result, status_code)
+    type(plan_request), intent(in)    :: stage_request
+    integer(i32), intent(in)          :: preferred_backend_family
+    integer(i32), intent(in)          :: preferred_execution_route
+    type(planner_result), intent(out) :: planning_result
+    integer(i32), intent(out)         :: status_code
+    type(plan_request)                :: candidate_request
+
+    candidate_request = stage_request
+    candidate_request%preferred_backend_mask = execution_route_backend_mask(preferred_execution_route)
+    planning_result = planner_result()
+
+    select case (preferred_backend_family)
+    case (MIZU_BACKEND_FAMILY_APPLE)
+      call plan_apple_stage(candidate_request, planning_result, status_code)
+    case (MIZU_BACKEND_FAMILY_CUDA)
+      call plan_cuda_stage(candidate_request, planning_result, status_code)
+    case default
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      planning_result%status_code = status_code
+    end select
+  end subroutine plan_stage_route_candidate
 
   subroutine finalize_projector_stage_cache(runtime_cache, optimization_store, optimization_key_text, &
                                             candidate_key_text, plan_id, selection_mode, elapsed_us, &
@@ -3688,6 +3825,40 @@ contains
       execution_routes(candidate_count) = MIZU_EXEC_ROUTE_CUDA
     end if
   end subroutine enumerate_candidate_routes
+
+  pure integer(i64) function execution_route_backend_mask(execution_route) result(route_mask)
+    integer(i32), intent(in) :: execution_route
+
+    route_mask = MIZU_BACKEND_MASK_NONE
+    select case (execution_route)
+    case (MIZU_EXEC_ROUTE_ANE)
+      route_mask = MIZU_BACKEND_MASK_APPLE_ANE
+    case (MIZU_EXEC_ROUTE_METAL)
+      route_mask = MIZU_BACKEND_MASK_APPLE_METAL
+    case (MIZU_EXEC_ROUTE_CUDA)
+      route_mask = MIZU_BACKEND_MASK_CUDA
+    end select
+  end function execution_route_backend_mask
+
+  pure integer(i32) function candidate_index_for_route(candidate_backend_families, candidate_execution_routes, &
+                                                       candidate_count, backend_family, execution_route) &
+      result(candidate_index)
+    integer(i32), intent(in) :: candidate_backend_families(:)
+    integer(i32), intent(in) :: candidate_execution_routes(:)
+    integer(i32), intent(in) :: candidate_count
+    integer(i32), intent(in) :: backend_family
+    integer(i32), intent(in) :: execution_route
+    integer(i32)             :: index
+
+    candidate_index = 0_i32
+    do index = 1_i32, candidate_count
+      if (candidate_backend_families(index) == backend_family .and. &
+          candidate_execution_routes(index) == execution_route) then
+        candidate_index = index
+        return
+      end if
+    end do
+  end function candidate_index_for_route
 
   pure integer(i32) function derive_optimization_backend_family(candidate_backend_families, candidate_count) &
       result(backend_family)

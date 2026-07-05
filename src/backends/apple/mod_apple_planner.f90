@@ -6,7 +6,8 @@ module mod_apple_planner
                                   MIZU_MODEL_FAMILY_QWEN3_5, MIZU_MODEL_FAMILY_GEMMA4, &
                                   MIZU_BACKEND_FAMILY_APPLE, MIZU_EXEC_ROUTE_NONE, &
                                   MIZU_EXEC_ROUTE_ANE, MIZU_EXEC_ROUTE_METAL, &
-                                  MIZU_BACKEND_MASK_APPLE_ANE, MIZU_BACKEND_MASK_APPLE_METAL
+                                  MIZU_BACKEND_MASK_APPLE_ANE, MIZU_BACKEND_MASK_APPLE_METAL, &
+                                  MIZU_FALLBACK_REASON_NONE, MIZU_FALLBACK_REASON_UNSUPPORTED_SHAPE
   use mod_backend_contract, only: plan_request, plan_candidate, planner_result
 
   implicit none
@@ -16,6 +17,7 @@ module mod_apple_planner
   public :: plan_apple_stage, build_apple_artifact_payload_text
 
   integer(i32), parameter :: APPLE_ARTIFACT_PAYLOAD_LEN = 1024_i32
+  integer(i64), parameter :: APPLE_ANE_PREFILL_TOKEN_LIMIT = 64_i64
 
 contains
 
@@ -24,9 +26,11 @@ contains
     type(planner_result), intent(out) :: result
     integer(i32), intent(out)         :: status_code
     integer(i32)                      :: execution_route
+    integer(i32)                      :: fallback_reason
+    logical                           :: requires_fallback
 
     result = planner_result()
-    execution_route = resolve_apple_route(request)
+    execution_route = resolve_apple_route(request, requires_fallback, fallback_reason)
     if (.not. apple_stage_is_supported(request%stage_kind) .or. execution_route == MIZU_EXEC_ROUTE_NONE) then
       status_code = MIZU_STATUS_INVALID_ARGUMENT
       result%status_code = status_code
@@ -34,6 +38,8 @@ contains
     end if
 
     result%status_code = MIZU_STATUS_OK
+    result%requires_fallback = requires_fallback
+    result%fallback_reason = fallback_reason
     result%candidate_count = 1_i32
     result%chosen_plan = plan_candidate()
     result%chosen_plan%backend_family = MIZU_BACKEND_FAMILY_APPLE
@@ -70,33 +76,91 @@ contains
       stage_kind == MIZU_STAGE_DECODE)
   end function apple_stage_is_supported
 
-  integer(i32) function resolve_apple_route(request) result(execution_route)
+  integer(i32) function resolve_apple_route(request, requires_fallback, fallback_reason) result(execution_route)
     type(plan_request), intent(in) :: request
     integer(i64)                   :: preferred_mask
     integer(i64)                   :: allowed_mask
+    integer(i32), intent(out)      :: fallback_reason
+    logical, intent(out)           :: requires_fallback
+    integer(i32)                   :: preferred_route
+    integer(i32)                   :: preferred_failure_reason
+    integer(i32)                   :: ane_failure_reason
 
     preferred_mask = iand(request%preferred_backend_mask, ior(MIZU_BACKEND_MASK_APPLE_ANE, MIZU_BACKEND_MASK_APPLE_METAL))
     allowed_mask = iand(request%allowed_backend_mask, ior(MIZU_BACKEND_MASK_APPLE_ANE, MIZU_BACKEND_MASK_APPLE_METAL))
 
     execution_route = MIZU_EXEC_ROUTE_NONE
-    if (iand(preferred_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64 .and. &
-        iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64) then
+    fallback_reason = MIZU_FALLBACK_REASON_NONE
+    requires_fallback = .false.
+    if (.not. apple_stage_is_supported(request%stage_kind)) return
+
+    preferred_route = preferred_apple_route(preferred_mask)
+    if (preferred_route /= MIZU_EXEC_ROUTE_NONE) then
+      if (apple_route_is_supported(request, preferred_route, preferred_failure_reason) .and. &
+          apple_route_is_allowed(allowed_mask, preferred_route)) then
+        execution_route = preferred_route
+        return
+      end if
+      if (preferred_failure_reason /= MIZU_FALLBACK_REASON_NONE) fallback_reason = preferred_failure_reason
+    end if
+
+    if (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64 .and. &
+        apple_route_is_supported(request, MIZU_EXEC_ROUTE_ANE, ane_failure_reason)) then
       execution_route = MIZU_EXEC_ROUTE_ANE
       return
     end if
-    if (iand(preferred_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64 .and. &
-        iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64) then
+
+    if (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64 .and. &
+        apple_route_is_supported(request, MIZU_EXEC_ROUTE_METAL, preferred_failure_reason)) then
       execution_route = MIZU_EXEC_ROUTE_METAL
-      return
-    end if
-    if (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64) then
-      execution_route = MIZU_EXEC_ROUTE_ANE
-      return
-    end if
-    if (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64) then
-      execution_route = MIZU_EXEC_ROUTE_METAL
+      if (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64) then
+        if (fallback_reason == MIZU_FALLBACK_REASON_NONE) fallback_reason = ane_failure_reason
+        requires_fallback = (fallback_reason /= MIZU_FALLBACK_REASON_NONE)
+      end if
     end if
   end function resolve_apple_route
+
+  pure integer(i32) function preferred_apple_route(preferred_mask) result(execution_route)
+    integer(i64), intent(in) :: preferred_mask
+
+    execution_route = MIZU_EXEC_ROUTE_NONE
+    if (iand(preferred_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64) then
+      execution_route = MIZU_EXEC_ROUTE_ANE
+      return
+    end if
+    if (iand(preferred_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64) then
+      execution_route = MIZU_EXEC_ROUTE_METAL
+    end if
+  end function preferred_apple_route
+
+  pure logical function apple_route_is_allowed(allowed_mask, execution_route) result(is_allowed)
+    integer(i64), intent(in) :: allowed_mask
+    integer(i32), intent(in) :: execution_route
+
+    is_allowed = .false.
+    select case (execution_route)
+    case (MIZU_EXEC_ROUTE_ANE)
+      is_allowed = (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_ANE) /= 0_i64)
+    case (MIZU_EXEC_ROUTE_METAL)
+      is_allowed = (iand(allowed_mask, MIZU_BACKEND_MASK_APPLE_METAL) /= 0_i64)
+    end select
+  end function apple_route_is_allowed
+
+  logical function apple_route_is_supported(request, execution_route, failure_reason) result(is_supported)
+    type(plan_request), intent(in) :: request
+    integer(i32), intent(in)       :: execution_route
+    integer(i32), intent(out)      :: failure_reason
+
+    is_supported = .true.
+    failure_reason = MIZU_FALLBACK_REASON_NONE
+    if (execution_route /= MIZU_EXEC_ROUTE_ANE) return
+
+    if (request%stage_kind == MIZU_STAGE_PREFILL .and. &
+        max(0_i64, request%shape_signature(2)) > APPLE_ANE_PREFILL_TOKEN_LIMIT) then
+      is_supported = .false.
+      failure_reason = MIZU_FALLBACK_REASON_UNSUPPORTED_SHAPE
+    end if
+  end function apple_route_is_supported
 
   integer(i64) function estimate_apple_workspace_bytes(request, execution_route) result(workspace_bytes)
     type(plan_request), intent(in) :: request

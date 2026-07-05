@@ -2484,7 +2484,7 @@ contains
     pack_usage%first_pack_offset = max(0_i64, parsed_first_offset)
     pack_usage%last_pack_offset = max(0_i64, parsed_last_offset)
     pack_usage%last_pack_bytes = max(0_i64, parsed_last_bytes)
-    if (parsed_usage_hash /= 0_i64) pack_usage%usage_hash = parsed_usage_hash
+    if (parsed_usage_hash /= 0_i64 .and. pack_usage%usage_hash == 0_i64) pack_usage%usage_hash = parsed_usage_hash
     pack_usage%has_usage = (pack_usage%usage_count > 0_i32)
     applied_ok = .true.
   end subroutine hydrate_pack_usage_buffer_summary
@@ -2637,7 +2637,7 @@ contains
     decoded_usage%last_pack_offset = pack_usage%last_pack_offset
     decoded_usage%last_pack_bytes = pack_usage%last_pack_bytes
     decoded_usage%usage_hash = pack_usage%usage_hash
-    if (parsed_usage_hash /= 0_i64) decoded_usage%usage_hash = parsed_usage_hash
+    if (parsed_usage_hash /= 0_i64 .and. decoded_usage%usage_hash == 0_i64) decoded_usage%usage_hash = parsed_usage_hash
 
     do entry_index = 1_i32, min(parsed_entry_count, MAX_CUDA_PACK_DISPATCH_ENTRIES)
       entry_offset = parsed_header_bytes + ((entry_index - 1_i32) * parsed_entry_bytes)

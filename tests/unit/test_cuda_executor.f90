@@ -1290,6 +1290,22 @@ program test_cuda_executor
   call expect_equal_i32("cuda payload replay should preserve token identity with an empty-entry exec buffer", &
     token_value_with_other_context, token_value_with_payload_fallback)
 
+  call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
+    2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 3333333333333333_i64, pack_tile_buffer_path)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore stale usage hashes from valid usage summaries", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with a stale usage hash summary", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with a stale usage hash summary", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with a stale usage hash summary", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
   call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path))
   call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
     token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &

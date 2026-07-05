@@ -26,6 +26,7 @@ program test_cache_store
   logical                       :: loaded_ok
   logical                       :: found
   character(len=*), parameter :: store_path = "/tmp/mizu_test_artifact_cache.txt"
+  character(len=*), parameter :: blocked_store_path = "/tmp/mizu_test_artifact_cache_blocked.txt"
 
   call initialize_runtime_cache_bundle(bundle)
   call touch_weight_cache_key(bundle, 'weight key "ane"', was_hit)
@@ -166,6 +167,30 @@ program test_cache_store
   call expect_equal_string("dash-valued weight path should round-trip", &
     trim(reloaded_metadata%payload_path), "-")
 
+  call initialize_runtime_cache_bundle(bundle)
+  call touch_weight_cache_key(bundle, 'stale weight key', was_hit)
+  call expect_false("stale weight key seed should miss", was_hit)
+  call record_weight_artifact_metadata(bundle, 'stale weight key', weight_metadata)
+  call load_runtime_cache_bundle(bundle, store_path, loaded_ok)
+  call expect_true("missing artifact cache load should succeed", loaded_ok)
+  call touch_weight_cache_key(bundle, 'stale weight key', was_hit)
+  call expect_false("missing artifact cache load should clear stale key", was_hit)
+  call lookup_weight_artifact_metadata(bundle, 'stale weight key', reloaded_metadata, found)
+  call expect_false("missing artifact cache load should clear stale metadata", found)
+
+  call initialize_runtime_cache_bundle(bundle)
+  call touch_plan_cache_key(bundle, 'stale plan key', was_hit)
+  call expect_false("stale plan key seed should miss", was_hit)
+  call record_plan_artifact_metadata(bundle, 'stale plan key', plan_metadata)
+  call prepare_unreadable_file(blocked_store_path)
+  call load_runtime_cache_bundle(bundle, blocked_store_path, loaded_ok)
+  call expect_false("unreadable artifact cache load should fail", loaded_ok)
+  call touch_plan_cache_key(bundle, 'stale plan key', was_hit)
+  call expect_false("unreadable artifact cache load should clear stale key", was_hit)
+  call lookup_plan_artifact_metadata(bundle, 'stale plan key', reloaded_metadata, found)
+  call expect_false("unreadable artifact cache load should clear stale metadata", found)
+  call execute_command_line("rm -f " // blocked_store_path)
+
   call execute_command_line("rm -f " // store_path)
   write(*, "(A)") "test_cache_store: PASS"
 
@@ -223,5 +248,17 @@ contains
       error stop 1
     end if
   end subroutine expect_equal_string
+
+  subroutine prepare_unreadable_file(file_path)
+    character(len=*), intent(in) :: file_path
+    integer :: exitstat
+
+    call execute_command_line("rm -rf " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("remove stale blocked artifact cache path", exitstat, 0)
+    call execute_command_line("touch " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("create blocked artifact cache file", exitstat, 0)
+    call execute_command_line("chmod 000 " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("chmod blocked artifact cache file", exitstat, 0)
+  end subroutine prepare_unreadable_file
 
 end program test_cache_store

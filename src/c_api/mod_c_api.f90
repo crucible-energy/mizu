@@ -1356,6 +1356,7 @@ contains
     integer(i64) :: decode_plan_id
     integer(i64) :: decode_elapsed_us
     integer(i64) :: stage_started_us
+    integer(i64) :: decode_shape_band
     integer(i32) :: decode_stop_reason
     integer(i32) :: updated_context_byte_count
     integer(i8)  :: updated_context_bytes(MAX_LIVE_CONTEXT_BYTES)
@@ -1454,8 +1455,9 @@ contains
     updated_context_byte_count = 0_i32
     updated_context_bytes = 0_i8
     decode_context_artifact_hash = 0_i64
+    decode_shape_band = decode_kv_shape_band(kv_before)
     call prepare_plan_stage_candidate(runtime, optimization_store, model, MIZU_STAGE_DECODE, &
-      OP_FAMILY_DECODE, [max(0_i64, kv_before), max(0_i64, int(options%token_budget, kind=i64)), 1_i64], &
+      OP_FAMILY_DECODE, [decode_shape_band, max(0_i64, int(options%token_budget, kind=i64)), 1_i64], &
       max(0_i64, int(options%token_budget, kind=i64)), decode_optimization_key_text, &
       decode_candidate_key_text, decode_plan_id, selection_mode, report_backend_family, report_route, &
       decode_artifact_metadata)
@@ -6328,6 +6330,24 @@ contains
       status_code = MIZU_STATUS_INVALID_ARGUMENT
     end if
   end function prepare_report_buffer
+
+  pure integer(i64) function decode_kv_shape_band(kv_token_count) result(shape_band)
+    integer(i64), intent(in) :: kv_token_count
+    integer(i64)             :: normalized_count
+    integer(i64)             :: max_doubling_band
+
+    normalized_count = max(0_i64, kv_token_count)
+    if (normalized_count <= 0_i64) then
+      shape_band = 0_i64
+      return
+    end if
+
+    shape_band = 16_i64
+    max_doubling_band = shiftr(huge(shape_band), 1)
+    do while (shape_band < normalized_count .and. shape_band <= max_doubling_band)
+      shape_band = shape_band * 2_i64
+    end do
+  end function decode_kv_shape_band
 
   subroutine fill_report_buffer(report_buffer_ptr, primary_report, secondary_report)
     type(c_ptr), value           :: report_buffer_ptr

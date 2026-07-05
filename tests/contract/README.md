@@ -169,6 +169,13 @@ These suites cover the `API-C*` portion of
   - verifies the final decode returns `MIZU_STATUS_END_OF_SEQUENCE`
   - verifies terminal decode surfaces a stable stop reason and emitted token
   - verifies repeated decode after exhaustion stays terminal without growing KV
+- `test_token_only_execution.c`
+  - verifies token-only prefill clears pending inputs, advances KV state, and
+    emits exactly one `PREFILL` report
+  - verifies decode is rejected while new staged tokens are pending and only
+    proceeds after another prefill
+  - verifies decode respects the caller token budget, `read_output` is stable
+    without advancing state, and a second decode extends existing KV state
 - `test_qwench_gguf_cuda_smoke.c`
   - skips cleanly when `~/.qwench/models` does not contain the expected local
     GGUF assets

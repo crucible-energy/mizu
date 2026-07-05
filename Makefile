@@ -89,6 +89,7 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_model_open_failures \
 	$(TEST_DIR)/test_modal_input_validation \
 	$(TEST_DIR)/test_opaque_handles \
+	$(TEST_DIR)/test_token_only_execution \
 	$(TEST_DIR)/test_decode_terminal_status \
 	$(TEST_DIR)/test_session_eviction \
 	$(TEST_DIR)/test_session_checkpoint_restore_failures \
@@ -475,6 +476,25 @@ $(TEST_DIR)/test_modal_input_validation: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90)
 		$(BACKEND_F90) \
 		$(CAPI_F90) \
 		$(TEST_DIR)/test_modal_input_validation.o \
+		$(APPLE_BRIDGE_OBJ) \
+		$(CUDA_BRIDGE_OBJ) \
+		$(APPLE_BRIDGE_LINK_LIBS) \
+		$(CUDA_BRIDGE_LINK_LIBS)
+
+$(TEST_DIR)/test_token_only_execution.o: tests/contract/test_token_only_execution.c | $(TEST_DIR)
+	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+$(TEST_DIR)/test_token_only_execution: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
+	$(CAPI_F90) $(TEST_DIR)/test_token_only_execution.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
+	mkdir -p $(TEST_DIR)/token_only_execution_mods
+	$(FC) $(FFLAGS) -J $(TEST_DIR)/token_only_execution_mods -I $(TEST_DIR)/token_only_execution_mods -o $@ \
+		$(COMMON_F90) \
+		$(MODEL_F90) \
+		$(CACHE_F90) \
+		$(RUNTIME_F90) \
+		$(BACKEND_F90) \
+		$(CAPI_F90) \
+		$(TEST_DIR)/test_token_only_execution.o \
 		$(APPLE_BRIDGE_OBJ) \
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \

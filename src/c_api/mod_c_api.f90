@@ -650,23 +650,27 @@ contains
     end if
 
     if (.not. c_associated(config_ptr)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "session config pointer is null")
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(config_ptr, c_config)
     if (.not. associated(c_config)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "session config pointer is invalid")
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_input_struct_size(c_config%struct_size, c_sizeof(c_config))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_model_owner_runtime_error(model, status_code, "session config struct_size is too small")
       mizu_session_open = int(status_code, kind=c_int32_t)
       return
     end if
 
     if (int(c_config%abi_version, kind=i32) /= MIZU_ABI_VERSION) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_ABI_MISMATCH, "session config ABI version mismatch")
       mizu_session_open = int(MIZU_STATUS_ABI_MISMATCH, kind=c_int32_t)
       return
     end if
@@ -683,6 +687,7 @@ contains
 
     status_code = require_retired_handle_capacity(retired_session_box_count)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_model_owner_runtime_error(model, status_code, "session handle arena is exhausted")
       mizu_session_open = int(status_code, kind=c_int32_t)
       return
     end if

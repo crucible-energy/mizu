@@ -104,6 +104,26 @@ int main(void) {
     session_config.sampler_kind = MIZU_SAMPLER_KIND_GREEDY;
     session_config.session_flags = MIZU_SESSION_FLAG_NONE;
 
+    status = mizu_session_open(model, NULL, &session);
+    if (!expect_status("session open with null config", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-open null-config failure should publish runtime error text",
+                     strstr(error_buffer, "session config pointer is null") != NULL)) return 1;
+
+    {
+        mizu_session_config_t bad_session_config;
+
+        memset(&bad_session_config, 0, sizeof(bad_session_config));
+        bad_session_config.struct_size = sizeof(bad_session_config) - 1;
+        bad_session_config.abi_version = mizu_get_abi_version();
+
+        status = mizu_session_open(model, &bad_session_config, &session);
+        if (!expect_status("session open with short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("session-open struct-size failure should replace earlier error text",
+                         strstr(error_buffer, "session config struct_size is too small") != NULL)) return 1;
+    }
+
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
 

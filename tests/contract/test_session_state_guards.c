@@ -196,6 +196,52 @@ int main(void) {
     if (!expect_true("last report after prefill should be prefill",
                      last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
 
+    status = mizu_session_attach_tokens(session, tokens, 3, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens on live session", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input on live session", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info with restaged inputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("restaged inputs should set pending flag",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) != 0)) return 1;
+    if (!expect_true("restaged inputs should preserve live context",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+    if (!expect_true("restaged inputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    if (!expect_true("restaged token count should be reported", session_info.staged_token_count == 3)) return 1;
+    if (!expect_true("restaged modal count should be reported", session_info.staged_modal_count == 1)) return 1;
+
+    status = mizu_session_clear_pending_inputs(session);
+    if (!expect_status("clear pending inputs on live session", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after clearing live-session staging", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("clearing pending inputs should clear pending flag",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) == 0)) return 1;
+    if (!expect_true("clearing pending inputs should preserve live context",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+    if (!expect_true("clearing pending inputs should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    if (!expect_true("clearing pending inputs should clear staged token count", session_info.staged_token_count == 0)) return 1;
+    if (!expect_true("clearing pending inputs should clear staged modal count", session_info.staged_modal_count == 0)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after clearing live-session staging", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("clearing pending inputs should preserve prefill last report",
+                     last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
+
+    status = mizu_session_prefill(session, NULL);
+    if (!expect_status("prefill after clearing restaged inputs", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after cleared-input prefill rejection", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("cleared-input prefill rejection should preserve live context",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+    if (!expect_true("cleared-input prefill rejection should preserve kv tokens", session_info.kv_token_count == 3)) return 1;
+    last_report.struct_size = sizeof(last_report);
+    status = mizu_session_get_last_report(session, &last_report);
+    if (!expect_status("last report after cleared-input prefill rejection", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("cleared-input prefill rejection should preserve prefill last report",
+                     last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
+
     park_buffer.struct_size = sizeof(park_buffer) - 1;
     status = mizu_session_park(session, &park_buffer);
     if (!expect_status("park should reject short report buffer struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;

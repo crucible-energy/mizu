@@ -1468,6 +1468,10 @@ contains
         result%token_count = 0_c_size_t
         result%stop_reason = int(MIZU_STOP_REASON_TOKEN_BUDGET, kind=c_int32_t)
         result%result_flags = 0_c_int64_t
+        session%last_report = make_stage_report(MIZU_STAGE_DECODE, session%live_context_backend_family, &
+          session%live_context_execution_route, MIZU_FALLBACK_REASON_NONE, MIZU_SELECTION_MODE_NONE, &
+          MIZU_COLD_STATE_WARM, MIZU_CACHE_FLAG_NONE, 0_i64, 0_i64)
+        call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
         mizu_session_decode_step = int(MIZU_STATUS_END_OF_SEQUENCE, kind=c_int32_t)
         return
       end if

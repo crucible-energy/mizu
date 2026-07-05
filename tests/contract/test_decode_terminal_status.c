@@ -31,6 +31,8 @@ int main(void) {
     int32_t staged_tokens[3] = {1, 2, 3};
     int32_t decoded_token = -1;
     int32_t output_token = -1;
+    mizu_execution_report_t decode_reports[1];
+    mizu_report_buffer_t decode_buffer;
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
@@ -102,13 +104,22 @@ int main(void) {
     decode_result.token_buffer = &decoded_token;
     decode_result.token_capacity = 1;
     decode_result.stop_reason = MIZU_STOP_REASON_NONE;
+    memset(decode_reports, 0, sizeof(decode_reports));
+    memset(&decode_buffer, 0, sizeof(decode_buffer));
+    decode_buffer.struct_size = sizeof(decode_buffer);
+    decode_buffer.reports = decode_reports;
+    decode_buffer.report_capacity = 1;
 
-    status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &decode_buffer);
     if (!expect_status("decode at context limit", status, MIZU_STATUS_END_OF_SEQUENCE)) return 1;
     if (!expect_true("terminal decode should still emit one token", decode_result.token_count == 1)) return 1;
     if (!expect_true("terminal decode should publish token-budget stop reason",
                      decode_result.stop_reason == MIZU_STOP_REASON_TOKEN_BUDGET)) return 1;
     if (!expect_true("terminal decode token should be positive", decoded_token > 0)) return 1;
+    if (!expect_true("terminal decode should publish one decode report", decode_buffer.report_count == 1)) return 1;
+    if (!expect_true("terminal decode report should be decode", decode_reports[0].stage_kind == MIZU_STAGE_DECODE)) {
+        return 1;
+    }
 
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
@@ -129,11 +140,19 @@ int main(void) {
     decoded_token = -1;
     decode_result.token_count = 99;
     decode_result.stop_reason = MIZU_STOP_REASON_NONE;
-    status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+    memset(decode_reports, 0, sizeof(decode_reports));
+    decode_buffer.report_count = 0;
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &decode_buffer);
     if (!expect_status("repeat decode after exhaustion", status, MIZU_STATUS_END_OF_SEQUENCE)) return 1;
     if (!expect_true("repeat terminal decode should emit no tokens", decode_result.token_count == 0)) return 1;
     if (!expect_true("repeat terminal decode should preserve token-budget stop reason",
                      decode_result.stop_reason == MIZU_STOP_REASON_TOKEN_BUDGET)) return 1;
+    if (!expect_true("repeat terminal decode should still publish one decode report", decode_buffer.report_count == 1)) {
+        return 1;
+    }
+    if (!expect_true("repeat terminal decode report should be decode", decode_reports[0].stage_kind == MIZU_STAGE_DECODE)) {
+        return 1;
+    }
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

@@ -1046,6 +1046,24 @@ program test_cuda_executor
     import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, &
     pack_tile_buffer_path, .false.)
 
+  open(unit=17, file=trim(cache_root) // "/" // trim(decode_usage_buffer_path), status="replace", action="write")
+  close(17)
+  open(unit=18, file=trim(cache_root) // "/" // trim(decode_exec_buffer_path), status="replace", action="write")
+  close(18)
+
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda binary-sidecar replay should still succeed with zero-byte exec and usage buffers", &
+    status_code, MIZU_STATUS_OK)
+  call expect_equal_i32("cuda binary-sidecar replay should ignore zero-byte usage summaries when dispatch data remains", &
+    token_value_with_other_context, token_value_with_dispatch_buffer_only)
+  call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
+    2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, pack_tile_buffer_path)
+  call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
+    import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, &
+    pack_tile_buffer_path, .false.)
+
   call execute_command_line("rm -f " // cache_root // "/" // pack_tile_cache_path, exitstat=shell_status)
   call expect_equal_i32("cuda binary-sidecar-only pack-tile cache cleanup should succeed", int(shell_status, kind=i32), 0_i32)
   call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &

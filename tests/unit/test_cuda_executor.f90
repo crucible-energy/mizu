@@ -1068,11 +1068,13 @@ program test_cuda_executor
   call expect_equal_i32("cuda stale pack-tile cache should not override raw pack-buffer token identity", &
     token_value_with_other_context, token_value_with_pack_buffer_only)
 
+  call write_pack_tile_buffer_fixture(trim(cache_root) // "/" // trim(pack_tile_buffer_path), .true., .true.)
   call write_pack_usage_buffer_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path), 4_i32, &
     2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, pack_tile_buffer_path)
   call write_pack_dispatch_buffer_fixture(trim(cache_root) // "/" // trim(decode_dispatch_buffer_path), 4_i32, &
     2222222222222222_i64)
   call write_pack_span_buffer_fixture(trim(cache_root) // "/" // trim(decode_span_buffer_path), import_bundle_root)
+  call write_pack_span_cache_fixture(trim(cache_root) // "/" // trim(decode_span_cache_path), pack_tile_cache_path)
   call write_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), &
     import_bundle_root, 4_i32, 2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64, &
     pack_tile_buffer_path, .false.)

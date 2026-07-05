@@ -31,6 +31,7 @@ program test_optimization_store
   logical                          :: saved_ok
   logical                          :: loaded_ok
   character(len=*), parameter      :: store_path = "/tmp/mizu_test_optimization_store.txt"
+  character(len=*), parameter      :: blocked_store_path = "/tmp/mizu_test_optimization_store_blocked.txt"
 
   call initialize_runtime_optimization_store(store)
   call lookup_winner_plan_id(store, "prefill:key:a", winner_plan_id, has_winner)
@@ -174,6 +175,24 @@ program test_optimization_store
     winner_candidate_key_text, "-")
   call execute_command_line("rm -f " // store_path)
 
+  call initialize_runtime_optimization_store(store)
+  call record_execution_sample(store, "prefill:key:missing", 711_i64, 4_i64, &
+    "candidate:missing:planner=1")
+  call load_runtime_optimization_store(store, store_path, loaded_ok)
+  call expect_true("missing optimization store load should succeed", loaded_ok)
+  call lookup_winner_plan_id(store, "prefill:key:missing", winner_plan_id, has_winner)
+  call expect_false("missing optimization store load should clear stale winner", has_winner)
+
+  call initialize_runtime_optimization_store(store)
+  call record_execution_sample(store, "prefill:key:blocked", 721_i64, 5_i64, &
+    "candidate:blocked:planner=1")
+  call prepare_unreadable_file(blocked_store_path)
+  call load_runtime_optimization_store(store, blocked_store_path, loaded_ok)
+  call expect_false("unreadable optimization store load should fail", loaded_ok)
+  call lookup_winner_plan_id(store, "prefill:key:blocked", winner_plan_id, has_winner)
+  call expect_false("unreadable optimization store load should clear stale winner", has_winner)
+  call execute_command_line("rm -f " // blocked_store_path)
+
   call write_corrupt_store_fixture(store_path)
   call initialize_runtime_optimization_store(reloaded_store)
   call load_runtime_optimization_store(reloaded_store, store_path, loaded_ok)
@@ -264,5 +283,17 @@ contains
     write(unit_id, "(A)") 'candidate "prefill:key:corrupt" broken_plan 2 9 "candidate:stale:planner=0"'
     close(unit_id)
   end subroutine write_corrupt_store_fixture
+
+  subroutine prepare_unreadable_file(file_path)
+    character(len=*), intent(in) :: file_path
+    integer(i32)                 :: exitstat
+
+    call execute_command_line("rm -rf " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("remove stale blocked optimization path", exitstat, 0_i32)
+    call execute_command_line("touch " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("create blocked optimization file", exitstat, 0_i32)
+    call execute_command_line("chmod 000 " // trim(file_path), exitstat=exitstat)
+    call expect_equal_i32("chmod blocked optimization file", exitstat, 0_i32)
+  end subroutine prepare_unreadable_file
 
 end program test_optimization_store

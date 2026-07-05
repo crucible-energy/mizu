@@ -274,6 +274,7 @@ contains
 
     loaded_ok = .false.
     if (len_trim(file_path) == 0) return
+    call reset_runtime_optimization_store(store)
 
     inquire(file=trim(file_path), exist=exists)
     if (.not. exists) then
@@ -284,7 +285,6 @@ contains
     open(newunit=unit_id, file=trim(file_path), status="old", action="read", iostat=ios)
     if (ios /= 0) return
 
-    call reset_runtime_optimization_store(store)
     do
       read(unit_id, "(A)", iostat=ios) line
       if (ios /= 0) exit

@@ -41,14 +41,17 @@ contains
   subroutine register_backend_probe_result(registry, result)
     type(runtime_backend_registry), intent(inout) :: registry
     type(capability_probe_result), intent(in)     :: result
+    type(backend_descriptor)                      :: descriptor
 
     if (.not. result%descriptor%is_available) return
     if (result%descriptor%route_mask == MIZU_BACKEND_MASK_NONE) return
     if (registry%backend_count >= MAX_RUNTIME_BACKENDS) return
 
+    descriptor = result%descriptor
+    descriptor%planner_version = max(0_i64, result%constraints%planner_version)
     registry%backend_count = registry%backend_count + 1_i32
-    registry%descriptors(registry%backend_count) = result%descriptor
-    registry%available_backend_mask = ior(registry%available_backend_mask, result%descriptor%route_mask)
+    registry%descriptors(registry%backend_count) = descriptor
+    registry%available_backend_mask = ior(registry%available_backend_mask, descriptor%route_mask)
   end subroutine register_backend_probe_result
 
   subroutine probe_runtime_backend_registry(registry)

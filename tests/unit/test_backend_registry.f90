@@ -27,6 +27,7 @@ program test_backend_registry
   apple_result%descriptor%is_available = .true.
   apple_result%descriptor%backend_name = "apple"
   apple_result%descriptor%device_name = "mac_mini"
+  apple_result%constraints%planner_version = 1_i64
   call register_backend_probe_result(registry, apple_result)
 
   cuda_result = capability_probe_result()
@@ -36,6 +37,7 @@ program test_backend_registry
   cuda_result%descriptor%is_available = .true.
   cuda_result%descriptor%backend_name = "cuda"
   cuda_result%descriptor%device_name = "nvidia_test_gpu"
+  cuda_result%constraints%planner_version = 90_i64
   call register_backend_probe_result(registry, cuda_result)
 
   call expect_equal_i32("registry should retain two detected families", registry%backend_count, 2_i32)
@@ -60,6 +62,10 @@ program test_backend_registry
     "mac_mini")
   call expect_equal_string("runtime should retain cuda device name", trim(runtime%detected_backends(2)%device_name), &
     "nvidia_test_gpu")
+  call expect_equal_i64("runtime should retain apple planner version", &
+    runtime%detected_backends(1)%planner_version, 1_i64)
+  call expect_equal_i64("runtime should retain cuda planner version", &
+    runtime%detected_backends(2)%planner_version, 90_i64)
 
   write(*, "(A)") "test_backend_registry: PASS"
 

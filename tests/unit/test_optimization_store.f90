@@ -174,6 +174,27 @@ program test_optimization_store
     winner_candidate_key_text, "-")
   call execute_command_line("rm -f " // store_path)
 
+  call write_corrupt_store_fixture(store_path)
+  call initialize_runtime_optimization_store(reloaded_store)
+  call load_runtime_optimization_store(reloaded_store, store_path, loaded_ok)
+  call expect_true("corrupt optimization store load should still succeed", loaded_ok)
+  call lookup_winner_plan_id(reloaded_store, "prefill:key:corrupt", winner_plan_id, has_winner)
+  call expect_false("corrupt persisted optimization record should be ignored", has_winner)
+  call record_execution_sample(reloaded_store, "prefill:key:corrupt", 801_i64, 6_i64, &
+    "candidate:recovered:planner=1")
+  call save_runtime_optimization_store(reloaded_store, store_path, saved_ok)
+  call expect_true("recovered optimization store save should succeed", saved_ok)
+  call initialize_runtime_optimization_store(store)
+  call load_runtime_optimization_store(store, store_path, loaded_ok)
+  call expect_true("recovered optimization store reload should succeed", loaded_ok)
+  call lookup_winner_candidate(store, "prefill:key:corrupt", winner_plan_id, &
+    winner_candidate_key_text, has_winner)
+  call expect_true("fresh evidence should replace corrupt persisted optimization record", has_winner)
+  call expect_equal_i64("recovered optimization winner", winner_plan_id, 801_i64)
+  call expect_equal_string("recovered optimization candidate key", winner_candidate_key_text, &
+    "candidate:recovered:planner=1")
+  call execute_command_line("rm -f " // store_path)
+
   call reset_runtime_optimization_store(store)
   call lookup_winner_plan_id(store, "prefill:key:a", winner_plan_id, has_winner)
   call expect_false("reset store should clear winner", has_winner)
@@ -234,5 +255,14 @@ contains
       error stop 1
     end if
   end subroutine expect_false
+
+  subroutine write_corrupt_store_fixture(file_path)
+    character(len=*), intent(in) :: file_path
+    integer(i32)                 :: unit_id
+
+    open(newunit=unit_id, file=trim(file_path), status="replace", action="write")
+    write(unit_id, "(A)") 'candidate "prefill:key:corrupt" broken_plan 2 9 "candidate:stale:planner=0"'
+    close(unit_id)
+  end subroutine write_corrupt_store_fixture
 
 end program test_optimization_store

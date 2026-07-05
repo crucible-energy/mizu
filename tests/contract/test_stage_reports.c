@@ -43,22 +43,126 @@ static int file_contains_substring(const char *path, const char *needle) {
     return 0;
 }
 
+static int replace_token_value_in_file(const char *path, const char *token_prefix, const char *replacement) {
+    FILE *file = NULL;
+    char *input = NULL;
+    char *output = NULL;
+    long input_size = 0;
+    size_t input_index = 0;
+    size_t output_index = 0;
+    size_t prefix_length = strlen(token_prefix);
+    size_t replacement_length = strlen(replacement);
+    size_t output_capacity = 0;
+    int replaced = 0;
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return 0;
+    }
+    if (fseek(file, 0L, SEEK_END) != 0) {
+        fclose(file);
+        return 0;
+    }
+    input_size = ftell(file);
+    if (input_size < 0) {
+        fclose(file);
+        return 0;
+    }
+    if (fseek(file, 0L, SEEK_SET) != 0) {
+        fclose(file);
+        return 0;
+    }
+
+    input = (char *)malloc((size_t)input_size + 1U);
+    if (input == NULL) {
+        fclose(file);
+        return 0;
+    }
+    if (fread(input, 1, (size_t)input_size, file) != (size_t)input_size) {
+        fclose(file);
+        free(input);
+        return 0;
+    }
+    fclose(file);
+    input[(size_t)input_size] = '\0';
+
+    output_capacity = ((size_t)input_size * 2U) + (replacement_length * 8U) + 1024U;
+    output = (char *)malloc(output_capacity);
+    if (output == NULL) {
+        free(input);
+        return 0;
+    }
+
+    while (input_index < (size_t)input_size) {
+        if (prefix_length > 0U &&
+            input_index + prefix_length <= (size_t)input_size &&
+            strncmp(input + input_index, token_prefix, prefix_length) == 0) {
+            memcpy(output + output_index, token_prefix, prefix_length);
+            output_index += prefix_length;
+            memcpy(output + output_index, replacement, replacement_length);
+            output_index += replacement_length;
+            input_index += prefix_length;
+            while (input_index < (size_t)input_size &&
+                   input[input_index] != ':' &&
+                   input[input_index] != '"' &&
+                   input[input_index] != '\n' &&
+                   input[input_index] != '\r') {
+                input_index++;
+            }
+            replaced = 1;
+            continue;
+        }
+
+        output[output_index++] = input[input_index++];
+    }
+    output[output_index] = '\0';
+
+    if (!replaced) {
+        free(output);
+        free(input);
+        return 0;
+    }
+
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        free(output);
+        free(input);
+        return 0;
+    }
+    if (fwrite(output, 1, output_index, file) != output_index) {
+        fclose(file);
+        free(output);
+        free(input);
+        return 0;
+    }
+    fclose(file);
+    free(output);
+    free(input);
+    return 1;
+}
+
 int main(void) {
     mizu_runtime_t *runtime = NULL;
     mizu_runtime_t *runtime_fresh = NULL;
+    mizu_runtime_t *runtime_disabled = NULL;
     mizu_runtime_t *runtime_explore = NULL;
     mizu_runtime_t *runtime_persist_a = NULL;
     mizu_runtime_t *runtime_persist_b = NULL;
+    mizu_runtime_t *runtime_invalidation = NULL;
     mizu_model_t *model = NULL;
     mizu_model_t *model_cached = NULL;
     mizu_model_t *model_fresh = NULL;
+    mizu_model_t *model_disabled_a = NULL;
+    mizu_model_t *model_disabled_b = NULL;
     mizu_model_t *model_explore_a = NULL;
     mizu_model_t *model_explore_b = NULL;
     mizu_model_t *model_explore_c = NULL;
+    mizu_model_t *model_explore_d = NULL;
     mizu_model_t *model_persist_a = NULL;
     mizu_model_t *model_persist_b = NULL;
     mizu_model_t *model_persist_c = NULL;
     mizu_model_t *model_persist_reuse = NULL;
+    mizu_model_t *model_invalidation = NULL;
     mizu_session_t *session = NULL;
     mizu_session_t *session_cached = NULL;
     mizu_session_t *session_persist_a = NULL;
@@ -71,6 +175,7 @@ int main(void) {
     int32_t decode_tokens_cached[1] = {0};
     const char *persist_root = "/tmp/mizu_stage_report_persist";
     const char *persist_artifact_cache_path = "/tmp/mizu_stage_report_persist/artifact_cache_v1.txt";
+    const char *persist_optimization_store_path = "/tmp/mizu_stage_report_persist/optimization_store_v1.txt";
     mizu_execution_report_t prefill_reports[2];
     mizu_execution_report_t prefill_reports_cached[2];
     mizu_execution_report_t decode_reports[1];
@@ -79,9 +184,11 @@ int main(void) {
     mizu_execution_report_t park_reports_cached[1];
     mizu_execution_report_t resume_reports[1];
     mizu_execution_report_t model_reports[2];
+    mizu_execution_report_t disabled_model_reports[2];
     mizu_execution_report_t fresh_model_report;
-    mizu_execution_report_t explore_reports[3];
+    mizu_execution_report_t explore_reports[4];
     mizu_execution_report_t persist_reports[4];
+    mizu_execution_report_t invalidation_report;
     mizu_execution_report_t persist_prefill_reports[2];
     mizu_execution_report_t persist_prefill_reports_reuse[2];
     mizu_execution_report_t persist_decode_reports[1];
@@ -98,6 +205,7 @@ int main(void) {
     mizu_report_buffer_t persist_decode_buffer;
     mizu_report_buffer_t persist_decode_buffer_reuse;
     mizu_runtime_config_t runtime_config;
+    mizu_runtime_config_t disabled_runtime_config;
     mizu_model_open_config_t model_config;
     mizu_runtime_config_t persist_runtime_config;
     mizu_model_open_config_t explore_model_config;
@@ -115,9 +223,11 @@ int main(void) {
     memset(park_reports_cached, 0, sizeof(park_reports_cached));
     memset(resume_reports, 0, sizeof(resume_reports));
     memset(model_reports, 0, sizeof(model_reports));
+    memset(disabled_model_reports, 0, sizeof(disabled_model_reports));
     memset(&fresh_model_report, 0, sizeof(fresh_model_report));
     memset(explore_reports, 0, sizeof(explore_reports));
     memset(persist_reports, 0, sizeof(persist_reports));
+    memset(&invalidation_report, 0, sizeof(invalidation_report));
     memset(persist_prefill_reports, 0, sizeof(persist_prefill_reports));
     memset(persist_prefill_reports_reuse, 0, sizeof(persist_prefill_reports_reuse));
     memset(persist_decode_reports, 0, sizeof(persist_decode_reports));
@@ -125,14 +235,16 @@ int main(void) {
 
     for (report_index = 0; report_index < 2; ++report_index) {
         model_reports[report_index].struct_size = sizeof(model_reports[report_index]);
+        disabled_model_reports[report_index].struct_size = sizeof(disabled_model_reports[report_index]);
     }
     fresh_model_report.struct_size = sizeof(fresh_model_report);
-    for (report_index = 0; report_index < 3; ++report_index) {
+    for (report_index = 0; report_index < 4; ++report_index) {
         explore_reports[report_index].struct_size = sizeof(explore_reports[report_index]);
     }
     for (report_index = 0; report_index < 4; ++report_index) {
         persist_reports[report_index].struct_size = sizeof(persist_reports[report_index]);
     }
+    invalidation_report.struct_size = sizeof(invalidation_report);
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE\n");
@@ -168,6 +280,7 @@ int main(void) {
     if (!expect_status("model report 1", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("first model load should be cold weight miss", (model_reports[0].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) == 0)) return 1;
     if (!expect_true("first model load should be direct", model_reports[0].selection_mode == MIZU_SELECTION_MODE_DIRECT)) return 1;
+    if (!expect_true("first model load should report cold state", model_reports[0].cold_state == MIZU_COLD_STATE_COLD)) return 1;
     if (!expect_true("first model load should report elapsed time", model_reports[0].elapsed_us > 0)) return 1;
 
     status = mizu_model_open(runtime, &model_config, &model_cached);
@@ -177,6 +290,7 @@ int main(void) {
     if (!expect_true("second model load should hit weight cache", (model_reports[1].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) != 0)) return 1;
     if (!expect_true("second model load should reuse winner", (model_reports[1].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("second model load should report reuse selection", model_reports[1].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("second model load should report warm state", model_reports[1].cold_state == MIZU_COLD_STATE_WARM)) return 1;
     if (!expect_true("second model load should report elapsed time", model_reports[1].elapsed_us > 0)) return 1;
 
     session_config.struct_size = sizeof(session_config);
@@ -236,6 +350,8 @@ int main(void) {
     if (!expect_true("prefill should report elapsed time", prefill_reports[1].elapsed_us > 0)) return 1;
     if (!expect_true("first projector should be multimodal cache miss", (prefill_reports[0].cache_flags & MIZU_CACHE_FLAG_MM_HIT) == 0)) return 1;
     if (!expect_true("first prefill should be plan cache miss", (prefill_reports[1].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) == 0)) return 1;
+    if (!expect_true("first projector should report cold state", prefill_reports[0].cold_state == MIZU_COLD_STATE_COLD)) return 1;
+    if (!expect_true("first prefill should report cold state", prefill_reports[1].cold_state == MIZU_COLD_STATE_COLD)) return 1;
     status = mizu_session_get_last_report(session, &prefill_reports[1]);
     if (!expect_status("prefill report entry should be reusable with get_last_report", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("reused prefill report entry should stay prefill", prefill_reports[1].stage_kind == MIZU_STAGE_PREFILL)) return 1;
@@ -264,6 +380,7 @@ int main(void) {
     if (!expect_true("decode plan id should be nonzero", decode_reports[0].plan_id != 0)) return 1;
     if (!expect_true("decode should report elapsed time", decode_reports[0].elapsed_us > 0)) return 1;
     if (!expect_true("first decode should be plan cache miss", (decode_reports[0].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) == 0)) return 1;
+    if (!expect_true("decode should report warm state", decode_reports[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     park_buffer.struct_size = sizeof(park_buffer);
     park_buffer.reports = park_reports;
@@ -276,6 +393,7 @@ int main(void) {
     if (!expect_true("park plan id should be nonzero", park_reports[0].plan_id != 0)) return 1;
     if (!expect_true("park should report elapsed time", park_reports[0].elapsed_us > 0)) return 1;
     if (!expect_true("first park should be session cache miss", (park_reports[0].cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) == 0)) return 1;
+    if (!expect_true("park should report warm state", park_reports[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     resume_buffer.struct_size = sizeof(resume_buffer);
     resume_buffer.reports = resume_reports;
@@ -289,6 +407,7 @@ int main(void) {
     if (!expect_true("resume should report elapsed time", resume_reports[0].elapsed_us > 0)) return 1;
     if (!expect_true("resume should hit session cache", (resume_reports[0].cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) != 0)) return 1;
     if (!expect_true("resume should reuse winner", (resume_reports[0].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
+    if (!expect_true("resume should report warm state", resume_reports[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     status = mizu_session_open(model, &session_config, &session_cached);
     if (!expect_status("session open cached", status, MIZU_STATUS_OK)) return 1;
@@ -311,6 +430,8 @@ int main(void) {
     if (!expect_true("cached prefill should reuse winner", (prefill_reports_cached[1].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("cached projector should report reuse selection", prefill_reports_cached[0].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
     if (!expect_true("cached prefill should report reuse selection", prefill_reports_cached[1].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("cached projector should report warm state", prefill_reports_cached[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
+    if (!expect_true("cached prefill should report warm state", prefill_reports_cached[1].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     decode_result.token_buffer = decode_tokens_cached;
     decode_buffer_cached.struct_size = sizeof(decode_buffer_cached);
@@ -323,6 +444,7 @@ int main(void) {
     if (!expect_true("cached decode should hit plan cache", (decode_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) != 0)) return 1;
     if (!expect_true("cached decode should reuse winner", (decode_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("cached decode should report reuse selection", decode_reports_cached[0].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("cached decode should report warm state", decode_reports_cached[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     park_buffer_cached.struct_size = sizeof(park_buffer_cached);
     park_buffer_cached.reports = park_reports_cached;
@@ -334,6 +456,7 @@ int main(void) {
     if (!expect_true("cached park should hit session cache", (park_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) != 0)) return 1;
     if (!expect_true("cached park should reuse winner", (park_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("cached park should report reuse selection", park_reports_cached[0].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("cached park should report warm state", park_reports_cached[0].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
@@ -358,6 +481,48 @@ int main(void) {
     status = mizu_runtime_destroy(runtime_fresh);
     if (!expect_status("fresh runtime destroy", status, MIZU_STATUS_OK)) return 1;
 
+    disabled_runtime_config = runtime_config;
+    disabled_runtime_config.optimization_mode = MIZU_OPTIMIZATION_MODE_DISABLED;
+    disabled_runtime_config.exploration_budget = 2;
+    status = mizu_runtime_create(&disabled_runtime_config, &runtime_disabled);
+    if (!expect_status("disabled runtime create", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_model_open(runtime_disabled, &explore_model_config, &model_disabled_a);
+    if (!expect_status("disabled model open 1", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_get_last_report(model_disabled_a, &disabled_model_reports[0]);
+    if (!expect_status("disabled model report 1", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("disabled optimization should keep first model load direct",
+                     disabled_model_reports[0].selection_mode == MIZU_SELECTION_MODE_DIRECT)) return 1;
+    if (!expect_true("disabled optimization should still report a route",
+                     disabled_model_reports[0].execution_route == MIZU_EXEC_ROUTE_ANE ||
+                     disabled_model_reports[0].execution_route == MIZU_EXEC_ROUTE_METAL)) return 1;
+    if (!expect_true("disabled optimization should still report elapsed time",
+                     disabled_model_reports[0].elapsed_us > 0)) return 1;
+    if (!expect_true("disabled first model load should be cold",
+                     disabled_model_reports[0].cold_state == MIZU_COLD_STATE_COLD)) return 1;
+
+    status = mizu_model_open(runtime_disabled, &explore_model_config, &model_disabled_b);
+    if (!expect_status("disabled model open 2", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_get_last_report(model_disabled_b, &disabled_model_reports[1]);
+    if (!expect_status("disabled model report 2", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("disabled optimization should never explore",
+                     disabled_model_reports[1].selection_mode == MIZU_SELECTION_MODE_DIRECT)) return 1;
+    if (!expect_true("disabled optimization should still hit the weight cache",
+                     (disabled_model_reports[1].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) != 0)) return 1;
+    if (!expect_true("disabled optimization should not mark winner reuse",
+                     (disabled_model_reports[1].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) == 0)) return 1;
+    if (!expect_true("disabled optimization should still report elapsed time on cached opens",
+                     disabled_model_reports[1].elapsed_us > 0)) return 1;
+    if (!expect_true("disabled cached model load should be warm",
+                     disabled_model_reports[1].cold_state == MIZU_COLD_STATE_WARM)) return 1;
+
+    status = mizu_model_close(model_disabled_a);
+    if (!expect_status("disabled model close 1", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(model_disabled_b);
+    if (!expect_status("disabled model close 2", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_runtime_destroy(runtime_disabled);
+    if (!expect_status("disabled runtime destroy", status, MIZU_STATUS_OK)) return 1;
+
     runtime_config.exploration_budget = 2;
     status = mizu_runtime_create(&runtime_config, &runtime_explore);
     if (!expect_status("explore runtime create", status, MIZU_STATUS_OK)) return 1;
@@ -368,6 +533,7 @@ int main(void) {
     if (!expect_status("explore report 1", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("explore model 1 should be exploratory", explore_reports[0].selection_mode == MIZU_SELECTION_MODE_EXPLORATORY)) return 1;
     if (!expect_true("explore model 1 should be weight miss", (explore_reports[0].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) == 0)) return 1;
+    if (!expect_true("explore model 1 should be cold", explore_reports[0].cold_state == MIZU_COLD_STATE_COLD)) return 1;
     if (!expect_true("explore model 1 should route to ANE first", explore_reports[0].execution_route == MIZU_EXEC_ROUTE_ANE)) return 1;
 
     status = mizu_model_open(runtime_explore, &explore_model_config, &model_explore_b);
@@ -377,6 +543,7 @@ int main(void) {
     if (!expect_true("explore model 2 should be exploratory", explore_reports[1].selection_mode == MIZU_SELECTION_MODE_EXPLORATORY)) return 1;
     if (!expect_true("explore model 2 should be weight miss", (explore_reports[1].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) == 0)) return 1;
     if (!expect_true("explore model plans should differ", explore_reports[0].plan_id != explore_reports[1].plan_id)) return 1;
+    if (!expect_true("explore model 2 should be cold", explore_reports[1].cold_state == MIZU_COLD_STATE_COLD)) return 1;
     if (!expect_true("explore model 2 should route to Metal second", explore_reports[1].execution_route == MIZU_EXEC_ROUTE_METAL)) return 1;
 
     status = mizu_model_open(runtime_explore, &explore_model_config, &model_explore_c);
@@ -387,7 +554,18 @@ int main(void) {
     if (!expect_true("explore model 3 should hit weight cache", (explore_reports[2].cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) != 0)) return 1;
     if (!expect_true("explore model 3 should mark winner reuse", (explore_reports[2].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("explore model 3 should report elapsed time", explore_reports[2].elapsed_us > 0)) return 1;
+    if (!expect_true("explore model 3 should be warm after convergence", explore_reports[2].cold_state == MIZU_COLD_STATE_WARM)) return 1;
     if (!expect_true("explore model 3 should reuse one explored plan", explore_reports[2].plan_id == explore_reports[0].plan_id || explore_reports[2].plan_id == explore_reports[1].plan_id)) return 1;
+
+    status = mizu_model_open(runtime_explore, &explore_model_config, &model_explore_d);
+    if (!expect_status("explore model open 4", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_get_last_report(model_explore_d, &explore_reports[3]);
+    if (!expect_status("explore report 4", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("explore model 4 should stay in reuse mode after evidence converges",
+                     explore_reports[3].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("explore model 4 should keep reusing the converged winner",
+                     explore_reports[3].plan_id == explore_reports[2].plan_id)) return 1;
+    if (!expect_true("explore model 4 should stay warm", explore_reports[3].cold_state == MIZU_COLD_STATE_WARM)) return 1;
 
     status = mizu_model_close(model_explore_a);
     if (!expect_status("explore model close 1", status, MIZU_STATUS_OK)) return 1;
@@ -395,6 +573,8 @@ int main(void) {
     if (!expect_status("explore model close 2", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_close(model_explore_c);
     if (!expect_status("explore model close 3", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(model_explore_d);
+    if (!expect_status("explore model close 4", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_destroy(runtime_explore);
     if (!expect_status("explore runtime destroy", status, MIZU_STATUS_OK)) return 1;
 
@@ -552,6 +732,92 @@ int main(void) {
     if (!expect_status("persist model close reuse", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_destroy(runtime_persist_b);
     if (!expect_status("persist runtime destroy b", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("persisted optimization store should include a concrete device identity",
+                     file_contains_substring(persist_optimization_store_path, ":device=") &&
+                     !file_contains_substring(persist_optimization_store_path, ":device=unbound"))) return 1;
+    if (!expect_true("persisted optimization store should include the resolved planner version token",
+                     file_contains_substring(persist_optimization_store_path, ":planner=1"))) return 1;
+    if (!expect_true("persisted optimization store should include the runtime-version token",
+                     file_contains_substring(persist_optimization_store_path, ":backendv=1"))) return 1;
+    command_status = system("cp /tmp/mizu_stage_report_persist/optimization_store_v1.txt "
+                            "/tmp/mizu_stage_report_persist/optimization_store_v1.bak");
+    if (!expect_true("optimization store backup should succeed", command_status == 0)) return 1;
+
+    if (!expect_true("device-token rewrite should succeed",
+                     replace_token_value_in_file(persist_optimization_store_path, ":device=", "stale_device"))) return 1;
+    status = mizu_runtime_create(&persist_runtime_config, &runtime_invalidation);
+    if (!expect_status("device invalidation runtime create", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_open(runtime_invalidation, &explore_model_config, &model_invalidation);
+    if (!expect_status("device invalidation model open", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_get_last_report(model_invalidation, &invalidation_report);
+    if (!expect_status("device invalidation model report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("device identity changes should invalidate persisted winner reuse",
+                     invalidation_report.selection_mode == MIZU_SELECTION_MODE_EXPLORATORY)) return 1;
+    if (!expect_true("device identity invalidation should keep weight artifacts reusable",
+                     (invalidation_report.cache_flags & MIZU_CACHE_FLAG_WEIGHT_HIT) != 0 &&
+                     (invalidation_report.cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) == 0)) return 1;
+    status = mizu_model_close(model_invalidation);
+    if (!expect_status("device invalidation model close", status, MIZU_STATUS_OK)) return 1;
+    model_invalidation = NULL;
+    status = mizu_runtime_destroy(runtime_invalidation);
+    if (!expect_status("device invalidation runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    runtime_invalidation = NULL;
+
+    command_status = system("cp /tmp/mizu_stage_report_persist/optimization_store_v1.bak "
+                            "/tmp/mizu_stage_report_persist/optimization_store_v1.txt");
+    if (!expect_true("planner invalidation restore should succeed", command_status == 0)) return 1;
+    if (!expect_true("planner-token rewrite should succeed",
+                     replace_token_value_in_file(persist_optimization_store_path, ":planner=", "999"))) return 1;
+    status = mizu_runtime_create(&persist_runtime_config, &runtime_invalidation);
+    if (!expect_status("planner invalidation runtime create", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_open(runtime_invalidation, &explore_model_config, &model_invalidation);
+    if (!expect_status("planner invalidation model open", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_get_last_report(model_invalidation, &invalidation_report);
+    if (!expect_status("planner invalidation model report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("planner version changes should invalidate persisted winner reuse",
+                     invalidation_report.selection_mode == MIZU_SELECTION_MODE_EXPLORATORY)) return 1;
+    status = mizu_model_close(model_invalidation);
+    if (!expect_status("planner invalidation model close", status, MIZU_STATUS_OK)) return 1;
+    model_invalidation = NULL;
+    status = mizu_runtime_destroy(runtime_invalidation);
+    if (!expect_status("planner invalidation runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    runtime_invalidation = NULL;
+
+    command_status = system("cp /tmp/mizu_stage_report_persist/optimization_store_v1.bak "
+                            "/tmp/mizu_stage_report_persist/optimization_store_v1.txt");
+    if (!expect_true("runtime invalidation restore should succeed", command_status == 0)) return 1;
+    if (!expect_true("runtime-version token rewrite should succeed",
+                     replace_token_value_in_file(persist_optimization_store_path, ":backendv=", "999"))) return 1;
+    status = mizu_runtime_create(&persist_runtime_config, &runtime_invalidation);
+    if (!expect_status("runtime invalidation runtime create", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_open(runtime_invalidation, &explore_model_config, &model_invalidation);
+    if (!expect_status("runtime invalidation model open", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_open(model_invalidation, &session_config, &session_persist_b);
+    if (!expect_status("runtime invalidation session open", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_tokens(session_persist_b, tokens, 3, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("runtime invalidation attach tokens", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_modal_input(session_persist_b, &modal_input);
+    if (!expect_status("runtime invalidation attach modal", status, MIZU_STATUS_OK)) return 1;
+    persist_prefill_buffer_reuse.struct_size = sizeof(persist_prefill_buffer_reuse);
+    persist_prefill_buffer_reuse.reports = persist_prefill_reports_reuse;
+    persist_prefill_buffer_reuse.report_capacity = 2;
+    persist_prefill_buffer_reuse.report_count = 0;
+    status = mizu_session_prefill(session_persist_b, &persist_prefill_buffer_reuse);
+    if (!expect_status("runtime invalidation prefill", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("runtime version changes should invalidate persisted prefill winner reuse",
+                     persist_prefill_reports_reuse[1].selection_mode == MIZU_SELECTION_MODE_EXPLORATORY)) return 1;
+    if (!expect_true("runtime version invalidation should preserve reusable prefill artifacts",
+                     (persist_prefill_reports_reuse[1].cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) != 0 &&
+                     (persist_prefill_reports_reuse[1].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) == 0)) return 1;
+    status = mizu_session_close(session_persist_b);
+    if (!expect_status("runtime invalidation session close", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(model_invalidation);
+    if (!expect_status("runtime invalidation model close", status, MIZU_STATUS_OK)) return 1;
+    model_invalidation = NULL;
+    status = mizu_runtime_destroy(runtime_invalidation);
+    if (!expect_status("runtime invalidation runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    runtime_invalidation = NULL;
+
     command_status = system("rm -rf /tmp/mizu_stage_report_persist");
     if (!expect_true("persist root cleanup should succeed", command_status == 0)) return 1;
 

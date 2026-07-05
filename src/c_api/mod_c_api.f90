@@ -82,7 +82,8 @@ module mod_c_api
                                 build_cuda_artifact_payload_text
   use mod_cuda_executor,  only: execute_cuda_projector, execute_cuda_prefill, execute_cuda_decode, &
                                 cuda_context_bytes_are_valid, extract_cuda_context_lineage
-  use mod_cache_keys,     only: MAX_CACHE_KEY_LEN, plan_cache_key, weight_cache_key, &
+  use mod_cache_keys,     only: MAX_CACHE_KEY_LEN, invalidation_version_fields, &
+                                plan_cache_key, weight_cache_key, &
                                 session_cache_key, multimodal_cache_key, build_plan_cache_key, &
                                 build_weight_cache_key, build_session_cache_key, &
                                 build_multimodal_cache_key
@@ -494,7 +495,8 @@ contains
       report_backend_family, report_route)
     model_registry(slot_id)%last_report = make_stage_report(MIZU_STAGE_MODEL_LOAD, report_backend_family, &
       report_route, MIZU_FALLBACK_REASON_NONE, selection_mode, &
-      MIZU_COLD_STATE_COLD, load_cache_flags, model_plan_id, load_elapsed_us)
+      resolve_stage_cold_state(MIZU_COLD_STATE_COLD, selection_mode, load_cache_flags), &
+      load_cache_flags, model_plan_id, load_elapsed_us)
 
     call register_model(runtime)
 
@@ -805,7 +807,8 @@ contains
     call resolve_session_stage_cache(runtime, runtime_cache, optimization_store, model, session, &
       stage_elapsed_us, stage_plan_id, selection_mode, report_backend_family, report_route, cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_PARK, report_backend_family, report_route, &
-      MIZU_FALLBACK_REASON_NONE, selection_mode, MIZU_COLD_STATE_WARM, &
+      MIZU_FALLBACK_REASON_NONE, selection_mode, &
+      resolve_stage_cold_state(MIZU_COLD_STATE_WARM, selection_mode, cache_flags), &
       cache_flags, stage_plan_id, stage_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
     if (checkpoint_offloaded .and. force_session_eviction_requested()) call evict_parked_session(session)
@@ -897,7 +900,8 @@ contains
     call resolve_session_stage_cache(runtime, runtime_cache, optimization_store, model, session, &
       stage_elapsed_us, stage_plan_id, selection_mode, report_backend_family, report_route, cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_RESUME, report_backend_family, report_route, &
-      MIZU_FALLBACK_REASON_NONE, selection_mode, MIZU_COLD_STATE_WARM, &
+      MIZU_FALLBACK_REASON_NONE, selection_mode, &
+      resolve_stage_cold_state(MIZU_COLD_STATE_WARM, selection_mode, cache_flags), &
       cache_flags, stage_plan_id, stage_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
 
@@ -1219,7 +1223,8 @@ contains
         trim(projector_candidate_key_text), projector_plan_id, projector_selection_mode, projector_elapsed_us, &
         projector_artifact_metadata, projector_cache_flags)
       projector_report = make_stage_report(MIZU_STAGE_PROJECTOR, projector_backend_family, &
-        projector_route, projector_fallback_reason, projector_selection_mode, prefill_cold_state, &
+        projector_route, projector_fallback_reason, projector_selection_mode, &
+        resolve_stage_cold_state(prefill_cold_state, projector_selection_mode, projector_cache_flags), &
         projector_cache_flags, projector_plan_id, projector_elapsed_us)
     else
       projector_report = execution_report()
@@ -1337,7 +1342,8 @@ contains
       trim(prefill_candidate_key_text), prefill_plan_id, prefill_selection_mode, prefill_elapsed_us, &
       prefill_artifact_metadata, prefill_cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_PREFILL, prefill_backend_family, prefill_route, &
-      prefill_fallback_reason, prefill_selection_mode, prefill_cold_state, &
+      prefill_fallback_reason, prefill_selection_mode, &
+      resolve_stage_cold_state(prefill_cold_state, prefill_selection_mode, prefill_cache_flags), &
       prefill_cache_flags, prefill_plan_id, prefill_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, projector_report)
 
@@ -1587,7 +1593,8 @@ contains
       trim(decode_candidate_key_text), decode_plan_id, selection_mode, decode_elapsed_us, &
       decode_artifact_metadata, decode_cache_flags)
     session%last_report = make_stage_report(MIZU_STAGE_DECODE, report_backend_family, report_route, &
-      decode_fallback_reason, selection_mode, MIZU_COLD_STATE_WARM, &
+      decode_fallback_reason, selection_mode, &
+      resolve_stage_cold_state(MIZU_COLD_STATE_WARM, selection_mode, decode_cache_flags), &
       decode_cache_flags, decode_plan_id, decode_elapsed_us)
     call fill_report_buffer(out_reports_ptr, session%last_report, execution_report())
 
@@ -2216,6 +2223,82 @@ contains
       manifest%projector%embedding_dtype = MIZU_DTYPE_BF16
     end if
   end subroutine populate_manifest_identity
+
+  pure integer(i32) function manifest_runtime_version_code(manifest) result(version_code)
+    type(model_manifest), intent(in) :: manifest
+
+    version_code = max(0_i32, manifest%runtime_version%manifest_major) * 1000_i32 + &
+      max(0_i32, manifest%runtime_version%manifest_minor)
+  end function manifest_runtime_version_code
+
+  pure integer(i32) function clamp_i64_to_i32_nonnegative(value) result(clamped_value)
+    integer(i64), intent(in) :: value
+    integer(i64)             :: upper_bound
+
+    upper_bound = int(huge(0_i32), kind=i64)
+    clamped_value = int(min(max(0_i64, value), upper_bound), kind=i32)
+  end function clamp_i64_to_i32_nonnegative
+
+  pure function default_backend_device_key(backend_family, execution_route) result(device_key)
+    integer(i32), intent(in) :: backend_family
+    integer(i32), intent(in) :: execution_route
+    character(len=MAX_NAME_LEN) :: device_key
+
+    device_key = "logical"
+    select case (backend_family)
+    case (MIZU_BACKEND_FAMILY_APPLE)
+      select case (execution_route)
+      case (MIZU_EXEC_ROUTE_ANE)
+        device_key = "apple_ane"
+      case (MIZU_EXEC_ROUTE_METAL)
+        device_key = "apple_metal"
+      case default
+        device_key = "apple"
+      end select
+    case (MIZU_BACKEND_FAMILY_CUDA)
+      device_key = "cuda"
+    end select
+  end function default_backend_device_key
+
+  pure subroutine initialize_cache_key_identity(manifest, backend_family, execution_route, device_key, versions)
+    type(model_manifest), intent(in)                  :: manifest
+    integer(i32), intent(in)                          :: backend_family
+    integer(i32), intent(in)                          :: execution_route
+    character(len=*), intent(out)                     :: device_key
+    type(invalidation_version_fields), intent(out)    :: versions
+
+    versions = invalidation_version_fields()
+    versions%abi_version = max(MIZU_ABI_VERSION, manifest%runtime_version%abi_version)
+    versions%planner_version = max(0_i32, manifest%runtime_version%planner_version)
+    versions%pack_version = max(0_i32, manifest%runtime_version%pack_version)
+    versions%backend_version = manifest_runtime_version_code(manifest)
+    device_key = default_backend_device_key(backend_family, execution_route)
+  end subroutine initialize_cache_key_identity
+
+  pure subroutine resolve_cache_key_identity(runtime, manifest, backend_family, execution_route, device_key, versions)
+    type(runtime_state), intent(in)                   :: runtime
+    type(model_manifest), intent(in)                  :: manifest
+    integer(i32), intent(in)                          :: backend_family
+    integer(i32), intent(in)                          :: execution_route
+    character(len=*), intent(out)                     :: device_key
+    type(invalidation_version_fields), intent(out)    :: versions
+    integer(i32)                                      :: backend_index
+
+    call initialize_cache_key_identity(manifest, backend_family, execution_route, device_key, versions)
+    if (backend_family == MIZU_BACKEND_FAMILY_NONE) return
+
+    do backend_index = 1_i32, runtime%detected_backend_count
+      if (runtime%detected_backends(backend_index)%family /= backend_family) cycle
+      if (len_trim(runtime%detected_backends(backend_index)%device_name) > 0) then
+        device_key = trim(runtime%detected_backends(backend_index)%device_name)
+      end if
+      if (runtime%detected_backends(backend_index)%planner_version > 0_i64) then
+        versions%planner_version = clamp_i64_to_i32_nonnegative( &
+          runtime%detected_backends(backend_index)%planner_version)
+      end if
+      return
+    end do
+  end subroutine resolve_cache_key_identity
 
   subroutine copy_model_import_snapshot(manifest, model)
     type(model_manifest), intent(in)    :: manifest
@@ -2998,6 +3081,8 @@ contains
     integer(i32)                                     :: optimization_backend_family
     integer(i32)                                     :: candidate_count
     integer(i32)                                     :: candidate_index
+    character(len=MAX_NAME_LEN)                      :: device_key
+    type(invalidation_version_fields)                :: key_versions
     logical                                          :: was_hit
     logical                                          :: reused_winner
 
@@ -3007,8 +3092,10 @@ contains
     candidate_plan_ids = 0_i64
     optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
 
-    call build_weight_cache_key(manifest, "unbound", "logical", optimization_backend_family, &
-      MIZU_EXEC_ROUTE_NONE, optimization_key)
+    call resolve_cache_key_identity(runtime, manifest, optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
+      device_key, key_versions)
+    call build_weight_cache_key(manifest, trim(device_key), "logical", optimization_backend_family, &
+      MIZU_EXEC_ROUTE_NONE, optimization_key, key_versions)
     optimization_key_text = append_allowed_mask_identity(trim(optimization_key%key_text), allowed_backend_mask)
     optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
     call initialize_plan_request(stage_request, MIZU_STAGE_MODEL_LOAD, OP_FAMILY_NONE, &
@@ -3019,8 +3106,11 @@ contains
     stage_request%planner_version_hint = int(manifest%runtime_version%planner_version, kind=i64)
 
     do candidate_index = 1_i32, candidate_count
-      call build_weight_cache_key(manifest, "unbound", "logical", candidate_backend_families(candidate_index), &
-        candidate_execution_routes(candidate_index), candidate_key)
+      call resolve_cache_key_identity(runtime, manifest, candidate_backend_families(candidate_index), &
+        candidate_execution_routes(candidate_index), device_key, key_versions)
+      call build_weight_cache_key(manifest, trim(device_key), "logical", &
+        candidate_backend_families(candidate_index), candidate_execution_routes(candidate_index), &
+        candidate_key, key_versions)
       candidate_key_texts(candidate_index) = append_import_pack_identity(trim(candidate_key%key_text), model)
       candidate_plan_ids(candidate_index) = hash_text64(trim(candidate_key_texts(candidate_index)))
     end do
@@ -3064,6 +3154,8 @@ contains
     integer(i32)                                    :: optimization_backend_family
     integer(i32)                                    :: candidate_count
     integer(i32)                                    :: candidate_index
+    character(len=MAX_NAME_LEN)                     :: device_key
+    type(invalidation_version_fields)               :: key_versions
     logical                                         :: was_hit
     logical                                         :: reused_winner
 
@@ -3074,15 +3166,19 @@ contains
     candidate_plan_ids = 0_i64
     optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
 
-    call build_session_cache_key(manifest, "unbound", optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
-      session%config%max_context_tokens, session%config%max_decode_tokens, optimization_key)
+    call resolve_cache_key_identity(runtime, manifest, optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
+      device_key, key_versions)
+    call build_session_cache_key(manifest, trim(device_key), optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
+      session%config%max_context_tokens, session%config%max_decode_tokens, optimization_key, key_versions)
     optimization_key_text = append_allowed_mask_identity(trim(optimization_key%key_text), &
       model%info%allowed_backend_mask)
 
     do candidate_index = 1_i32, candidate_count
-      call build_session_cache_key(manifest, "unbound", candidate_backend_families(candidate_index), &
+      call resolve_cache_key_identity(runtime, manifest, candidate_backend_families(candidate_index), &
+        candidate_execution_routes(candidate_index), device_key, key_versions)
+      call build_session_cache_key(manifest, trim(device_key), candidate_backend_families(candidate_index), &
         candidate_execution_routes(candidate_index), session%config%max_context_tokens, &
-        session%config%max_decode_tokens, candidate_key)
+        session%config%max_decode_tokens, candidate_key, key_versions)
       candidate_key_texts(candidate_index) = trim(candidate_key%key_text)
       candidate_plan_ids(candidate_index) = hash_text64(trim(candidate_key_texts(candidate_index)))
     end do
@@ -3196,15 +3292,27 @@ contains
     character(len=*), intent(out)         :: checkpoint_key_text
     type(model_manifest)                  :: manifest
     type(session_cache_key)               :: checkpoint_key
+    type(runtime_state), pointer          :: runtime
+    type(invalidation_version_fields)     :: key_versions
+    character(len=MAX_NAME_LEN)           :: device_key
+    integer(i32)                          :: owner_status
 
     checkpoint_key_text = ""
     if (session%live_context_backend_family == MIZU_BACKEND_FAMILY_NONE) return
     if (session%live_context_execution_route == MIZU_EXEC_ROUTE_NONE) return
 
     call populate_manifest_identity(model, manifest)
-    call build_session_cache_key(manifest, "checkpoint", session%live_context_backend_family, &
+    call resolve_model_owner_runtime(model, runtime, owner_status)
+    if (owner_status == MIZU_STATUS_OK) then
+      call resolve_cache_key_identity(runtime, manifest, session%live_context_backend_family, &
+        session%live_context_execution_route, device_key, key_versions)
+    else
+      call initialize_cache_key_identity(manifest, session%live_context_backend_family, &
+        session%live_context_execution_route, device_key, key_versions)
+    end if
+    call build_session_cache_key(manifest, trim(device_key), session%live_context_backend_family, &
       session%live_context_execution_route, session%config%max_context_tokens, &
-      session%config%max_decode_tokens, checkpoint_key)
+      session%config%max_decode_tokens, checkpoint_key, key_versions)
     write(checkpoint_key_text, '(A,":ctx_hash=",I0,":kv=",I0,":ctx_bytes=",I0)') trim(checkpoint_key%key_text), &
       session%live_context_hash, session%kv_token_count, session%live_context_byte_count
   end subroutine build_session_checkpoint_key
@@ -3421,6 +3529,8 @@ contains
     integer(i32)                                     :: candidate_count
     integer(i32)                                     :: candidate_index
     integer(i32)                                     :: selected_candidate_index
+    character(len=MAX_NAME_LEN)                      :: device_key
+    type(invalidation_version_fields)                :: key_versions
 
     call populate_manifest_identity(model, manifest)
     optimization_key_text = ""
@@ -3444,17 +3554,21 @@ contains
     if (status_code /= MIZU_STATUS_OK) return
     optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
 
-    call build_plan_cache_key(manifest, "unbound", "logical", stage_kind, optimization_backend_family, &
-      MIZU_EXEC_ROUTE_NONE, MIZU_DTYPE_BF16, 3_i32, shape, optimization_key)
+    call resolve_cache_key_identity(runtime, manifest, optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
+      device_key, key_versions)
+    call build_plan_cache_key(manifest, trim(device_key), "logical", stage_kind, optimization_backend_family, &
+      MIZU_EXEC_ROUTE_NONE, MIZU_DTYPE_BF16, 3_i32, shape, optimization_key, key_versions)
     optimization_key_text = append_allowed_mask_identity(trim(optimization_key%key_text), &
       allowed_backend_mask)
     optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
     optimization_key_text = append_import_stage_usage_identity(trim(optimization_key_text), stage_kind, model)
 
     do candidate_index = 1_i32, candidate_count
-      call build_plan_cache_key(manifest, "unbound", "logical", stage_kind, &
+      call resolve_cache_key_identity(runtime, manifest, candidate_backend_families(candidate_index), &
+        candidate_execution_routes(candidate_index), device_key, key_versions)
+      call build_plan_cache_key(manifest, trim(device_key), "logical", stage_kind, &
         candidate_backend_families(candidate_index), candidate_execution_routes(candidate_index), &
-        MIZU_DTYPE_BF16, 3_i32, shape, candidate_key)
+        MIZU_DTYPE_BF16, 3_i32, shape, candidate_key, key_versions)
       candidate_key_text = append_import_pack_identity(trim(candidate_key%key_text), model)
       candidate_key_text = append_import_stage_usage_identity(trim(candidate_key_text), stage_kind, model)
       candidate_plan_ids(candidate_index) = hash_text64(trim(candidate_key_text))
@@ -3556,9 +3670,12 @@ contains
     integer(i32)                                    :: candidate_backend_families(3)
     integer(i32)                                    :: candidate_execution_routes(3)
     integer(i32)                                    :: candidate_fallback_reasons(3)
+    integer(i32)                                    :: optimization_backend_family
     integer(i32)                                    :: candidate_count
     integer(i32)                                    :: candidate_index
     integer(i32)                                    :: selected_candidate_index
+    character(len=MAX_NAME_LEN)                     :: device_key
+    type(invalidation_version_fields)               :: key_versions
 
     call populate_manifest_identity(model, manifest)
     slot_name = trim(staged_modal_slot_name)
@@ -3587,15 +3704,22 @@ contains
     fallback_reason = MIZU_FALLBACK_REASON_NONE
     artifact_metadata = artifact_metadata_record()
     status_code = MIZU_STATUS_OK
-    call build_multimodal_cache_key(manifest, "unbound", trim(slot_name), modality_kind, &
-      modality_dtype, max(0_i64, staged_modal_byte_count), key)
-    optimization_key_text = append_allowed_mask_identity(trim(key%key_text), model%info%allowed_backend_mask)
-    optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
     call collect_plannable_stage_candidates(stage_request, candidate_backend_families, candidate_execution_routes, &
       candidate_fallback_reasons, candidate_count, status_code)
     if (status_code /= MIZU_STATUS_OK) return
+    optimization_backend_family = derive_optimization_backend_family(candidate_backend_families, candidate_count)
+    call resolve_cache_key_identity(runtime, manifest, optimization_backend_family, MIZU_EXEC_ROUTE_NONE, &
+      device_key, key_versions)
+    call build_multimodal_cache_key(manifest, trim(device_key), trim(slot_name), modality_kind, &
+      modality_dtype, max(0_i64, staged_modal_byte_count), key, key_versions)
+    optimization_key_text = append_allowed_mask_identity(trim(key%key_text), model%info%allowed_backend_mask)
+    optimization_key_text = append_import_pack_identity(trim(optimization_key_text), model)
 
     do candidate_index = 1_i32, candidate_count
+      call resolve_cache_key_identity(runtime, manifest, candidate_backend_families(candidate_index), &
+        candidate_execution_routes(candidate_index), device_key, key_versions)
+      call build_multimodal_cache_key(manifest, trim(device_key), trim(slot_name), modality_kind, &
+        modality_dtype, max(0_i64, staged_modal_byte_count), key, key_versions)
       candidate_key_texts(candidate_index) = append_route_identity(trim(key%key_text), &
         candidate_backend_families(candidate_index), candidate_execution_routes(candidate_index))
       candidate_key_texts(candidate_index) = append_import_pack_identity(trim(candidate_key_texts(candidate_index)), model)
@@ -3798,6 +3922,23 @@ contains
     if (was_hit) cache_flags = ior(cache_flags, hit_flag)
     if (reused_winner) cache_flags = ior(cache_flags, MIZU_CACHE_FLAG_WINNER_REUSED)
   end function compose_cache_flags
+
+  pure integer(i32) function resolve_stage_cold_state(default_cold_state, selection_mode, cache_flags) &
+      result(cold_state)
+    integer(i32), intent(in) :: default_cold_state
+    integer(i32), intent(in) :: selection_mode
+    integer(i64), intent(in) :: cache_flags
+    integer(i64)             :: hit_flags
+
+    cold_state = default_cold_state
+    if (cold_state == MIZU_COLD_STATE_WARM) return
+
+    hit_flags = ior(ior(MIZU_CACHE_FLAG_WEIGHT_HIT, MIZU_CACHE_FLAG_PLAN_HIT), &
+      ior(MIZU_CACHE_FLAG_SESSION_HIT, MIZU_CACHE_FLAG_MM_HIT))
+    if (selection_mode == MIZU_SELECTION_MODE_REUSE .or. iand(cache_flags, hit_flags) /= 0_i64) then
+      cold_state = MIZU_COLD_STATE_WARM
+    end if
+  end function resolve_stage_cold_state
 
   pure subroutine enumerate_candidate_routes(backend_mask, backend_families, execution_routes, candidate_count)
     integer(i64), intent(in)  :: backend_mask
@@ -5032,16 +5173,29 @@ contains
     integer(i32), intent(in)      :: execution_route
     type(model_manifest)          :: manifest
     type(weight_cache_key)        :: key
+    type(runtime_state), pointer  :: runtime
+    type(invalidation_version_fields) :: key_versions
     character(len=MAX_CACHE_KEY_LEN) :: candidate_key_text
+    character(len=MAX_NAME_LEN)      :: device_key
     character(len=MAX_NAME_LEN)      :: fingerprint_token
     character(len=MAX_PATH_LEN)      :: payload_path
+    integer(i32)                     :: owner_status
 
     payload_path = ""
     if (execution_route /= MIZU_EXEC_ROUTE_CUDA) return
     if (model%import_weight_pack_hash == 0_i64) return
 
     call populate_manifest_identity(model, manifest)
-    call build_weight_cache_key(manifest, "unbound", "logical", MIZU_BACKEND_FAMILY_CUDA, execution_route, key)
+    call resolve_model_owner_runtime(model, runtime, owner_status)
+    if (owner_status == MIZU_STATUS_OK) then
+      call resolve_cache_key_identity(runtime, manifest, MIZU_BACKEND_FAMILY_CUDA, execution_route, &
+        device_key, key_versions)
+    else
+      call initialize_cache_key_identity(manifest, MIZU_BACKEND_FAMILY_CUDA, execution_route, &
+        device_key, key_versions)
+    end if
+    call build_weight_cache_key(manifest, trim(device_key), "logical", MIZU_BACKEND_FAMILY_CUDA, &
+      execution_route, key, key_versions)
     candidate_key_text = append_import_pack_identity(trim(key%key_text), model)
     fingerprint_token = build_artifact_fingerprint_token(trim(candidate_key_text))
     payload_path = build_artifact_payload_path(MIZU_STAGE_MODEL_LOAD, MIZU_BACKEND_FAMILY_CUDA, execution_route, &

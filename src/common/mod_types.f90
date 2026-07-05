@@ -201,6 +201,7 @@ module mod_types
   type :: backend_descriptor
     integer(i32)                     :: family           = MIZU_BACKEND_FAMILY_NONE
     integer(i64)                     :: route_mask       = MIZU_BACKEND_MASK_NONE
+    integer(i64)                     :: planner_version  = 0_i64
     logical                          :: is_available     = .false.
     character(len=MAX_NAME_LEN)      :: backend_name     = ""
     character(len=MAX_NAME_LEN)      :: device_name      = ""

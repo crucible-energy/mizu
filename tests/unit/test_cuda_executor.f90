@@ -1218,6 +1218,42 @@ program test_cuda_executor
   call expect_equal_i32("cuda payload replay should preserve token identity with a malformed exec buffer", &
     token_value_with_other_context, token_value_with_payload_fallback)
 
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_exec_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda malformed exec-buffer cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+  call write_invalid_payload_fixture(trim(cache_root) // "/" // trim(decode_usage_path) // ".spancache", &
+    "kind=cuda_pack_span_cache_v4")
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore malformed span caches", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with a malformed span cache", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with a malformed span cache", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with a malformed span cache", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_usage_path) // ".spancache", &
+    exitstat=shell_status)
+  call expect_equal_i32("cuda malformed span-cache cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+  call write_invalid_payload_fixture(trim(cache_root) // "/" // trim(decode_usage_path) // ".packtiles", &
+    "kind=cuda_weight_pack_tile_cache_v4;pack_count=4")
+  call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_usage_path) // ".packbuffer")
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore malformed default pack sidecars", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with malformed default pack sidecars", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with malformed default pack sidecars", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with malformed default pack sidecars", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
   open(unit=12, file=trim(cache_root) // "/" // trim(decode_path), status="replace", action="write")
   write(12, "(A)") "candidate=decode;stage=4;format=cuda_bf16_decode_plan_v2"
   close(12)
@@ -1722,6 +1758,16 @@ contains
     write(unit_id) invalid_bytes
     close(unit_id)
   end subroutine write_invalid_blob_fixture
+
+  subroutine write_invalid_payload_fixture(full_path, payload_text)
+    character(len=*), intent(in) :: full_path
+    character(len=*), intent(in) :: payload_text
+    integer                      :: unit_id
+
+    open(newunit=unit_id, file=trim(full_path), status="replace", action="write")
+    write(unit_id, "(A)") trim(payload_text)
+    close(unit_id)
+  end subroutine write_invalid_payload_fixture
 
   subroutine read_fixture_span_record(bundle_root, source_path, span_hash, sample_bytes_i64, sample_bytes, sample_count)
     character(len=*), intent(in) :: bundle_root

@@ -348,12 +348,7 @@ contains
 
     inquire(file=trim(full_path), exist=exists, size=file_size)
     if (.not. exists) return
-    if (file_size <= 0_i64) then
-      allocate(blob_bytes(1))
-      blob_bytes = 0_i8
-      loaded_ok = .true.
-      return
-    end if
+    if (file_size <= 0_i64) return
     if (file_size > int(huge(0_i32), kind=i64)) return
 
     blob_count = int(file_size, kind=i32)
@@ -518,6 +513,7 @@ contains
     character(len=*), intent(in) :: cache_root
     character(len=*), intent(in) :: artifact_path
     character(len=MAX_PATH_LEN)  :: full_path
+    integer(i64)                 :: file_size
     logical                      :: exists
 
     has_sidecars = .false.
@@ -526,8 +522,8 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, build_pack_execution_buffer_artifact_path(artifact_path))
     if (len_trim(full_path) > 0) then
-      inquire(file=trim(full_path), exist=exists)
-      if (exists) then
+      inquire(file=trim(full_path), exist=exists, size=file_size)
+      if (exists .and. file_size > 0_i64) then
         has_sidecars = .true.
         return
       end if
@@ -535,8 +531,8 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, build_pack_usage_buffer_artifact_path(artifact_path))
     if (len_trim(full_path) > 0) then
-      inquire(file=trim(full_path), exist=exists)
-      if (exists) then
+      inquire(file=trim(full_path), exist=exists, size=file_size)
+      if (exists .and. file_size > 0_i64) then
         has_sidecars = .true.
         return
       end if
@@ -544,8 +540,8 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, build_pack_dispatch_buffer_artifact_path(artifact_path))
     if (len_trim(full_path) > 0) then
-      inquire(file=trim(full_path), exist=exists)
-      if (exists) then
+      inquire(file=trim(full_path), exist=exists, size=file_size)
+      if (exists .and. file_size > 0_i64) then
         has_sidecars = .true.
         return
       end if
@@ -553,8 +549,8 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, build_pack_span_buffer_artifact_path(artifact_path))
     if (len_trim(full_path) > 0) then
-      inquire(file=trim(full_path), exist=exists)
-      if (exists) then
+      inquire(file=trim(full_path), exist=exists, size=file_size)
+      if (exists .and. file_size > 0_i64) then
         has_sidecars = .true.
         return
       end if
@@ -562,8 +558,8 @@ contains
 
     full_path = join_cache_root_with_payload_path(cache_root, build_pack_span_cache_artifact_path(artifact_path))
     if (len_trim(full_path) > 0) then
-      inquire(file=trim(full_path), exist=exists)
-      if (exists) has_sidecars = .true.
+      inquire(file=trim(full_path), exist=exists, size=file_size)
+      if (exists .and. file_size > 0_i64) has_sidecars = .true.
     end if
   end function artifact_has_compact_pack_sidecars
 

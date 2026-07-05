@@ -1592,6 +1592,7 @@ contains
     logical                                      :: applied_usage_buffer
     logical                                      :: found_span_record
     logical                                      :: applied_cached_entry_data
+    type(cuda_pack_usage_profile)                :: exec_pack_usage
     integer(i32)                                 :: resolved_span_pack_index
     integer(i32)                                 :: expected_entry_count
     integer(i32)                                 :: resolved_entry_count
@@ -1724,8 +1725,10 @@ contains
 
     applied_exec_buffer = .false.
     if (loaded_exec_buffer) then
-      call hydrate_pack_execution_buffer(exec_buffer_bytes, exec_buffer_count, pack_usage, applied_exec_buffer)
+      exec_pack_usage = pack_usage
+      call hydrate_pack_execution_buffer(exec_buffer_bytes, exec_buffer_count, exec_pack_usage, applied_exec_buffer)
       if (applied_exec_buffer) then
+        pack_usage = exec_pack_usage
         if (loaded_pack_tile_buffer) then
           call canonicalize_pack_usage_from_pack_buffer(pack_usage, pack_tile_buffer_bytes, pack_tile_buffer_count)
         end if
@@ -2090,6 +2093,8 @@ contains
     integer(i32)                                 :: tile_data_bytes
     integer(i32)                                 :: decoded_page_word_count
     integer(i32)                                 :: decoded_tile_byte_count
+    integer(i32)                                 :: live_entry_count
+    integer(i32)                                 :: expected_entry_count
     integer(i64)                                 :: entry_offset
     integer(i64)                                 :: entry_bytes
     integer(i64)                                 :: span_hash
@@ -2141,6 +2146,8 @@ contains
     pack_usage%first_pack_offset = max(0_i64, parsed_first_offset)
     pack_usage%last_pack_offset = max(0_i64, parsed_last_offset)
     pack_usage%last_pack_bytes = max(0_i64, parsed_last_bytes)
+    live_entry_count = 0_i32
+    expected_entry_count = min(MAX_CUDA_PACK_DISPATCH_ENTRIES, max(0_i32, parsed_entry_count))
 
     do record_index = 1_i32, min(parsed_entry_count, MAX_CUDA_PACK_DISPATCH_ENTRIES)
       record_offset = parsed_header_bytes + ((record_index - 1_i32) * parsed_entry_bytes)
@@ -2224,9 +2231,22 @@ contains
         call decode_buffer_to_span_bytes(buffer_bytes, buffer_count, sample_offset, sample_count, &
           pack_usage%entry_span_samples(:, entry_index), pack_usage%entry_span_sample_sizes(entry_index))
       end if
+      if (pack_usage%entry_bytes(entry_index) > 0_i64) live_entry_count = live_entry_count + 1_i32
     end do
 
     call refresh_compact_pack_usage_summary(pack_usage)
+    if (live_entry_count <= 0_i32) then
+      pack_usage = cuda_pack_usage_profile()
+      return
+    end if
+    if (live_entry_count < expected_entry_count) then
+      pack_usage = cuda_pack_usage_profile()
+      return
+    end if
+    if (parsed_usage_count > 0_i32 .and. live_entry_count < min(MAX_CUDA_PACK_DISPATCH_ENTRIES, parsed_usage_count)) then
+      pack_usage = cuda_pack_usage_profile()
+      return
+    end if
     if (pack_usage%usage_hash == 0_i64 .and. pack_usage%has_usage) then
       call build_resolved_pack_usage_dependency_hash(pack_usage, pack_usage%usage_hash, applied_ok)
       if (.not. applied_ok) pack_usage%usage_hash = positive_hash64("cuda_exec_buffer")

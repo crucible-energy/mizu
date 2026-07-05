@@ -1274,6 +1274,22 @@ program test_cuda_executor
   call expect_true("cuda payload-only replay should preserve readable lineage", snapshot_valid)
   payload_only_decode_artifact_hash = artifact_hash
 
+  call write_empty_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), 4_i32, &
+    2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64)
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore exec buffers without live entries", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with an empty-entry exec buffer", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with an empty-entry exec buffer", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with an empty-entry exec buffer", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
   call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path))
   call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
     token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
@@ -1667,6 +1683,40 @@ contains
     write(unit_id) buffer_bytes(1:buffer_offset)
     close(unit_id)
   end subroutine write_pack_execution_buffer_fixture
+
+  subroutine write_empty_pack_execution_buffer_fixture(full_path, usage_count, usage_bytes, first_pack_offset, &
+                                                       last_pack_offset, last_pack_bytes, usage_hash)
+    character(len=*), intent(in) :: full_path
+    integer(i32), intent(in)     :: usage_count
+    integer(i64), intent(in)     :: usage_bytes
+    integer(i64), intent(in)     :: first_pack_offset
+    integer(i64), intent(in)     :: last_pack_offset
+    integer(i64), intent(in)     :: last_pack_bytes
+    integer(i64), intent(in)     :: usage_hash
+    integer(i32), parameter      :: CUDA_EXEC_BUFFER_MAGIC = int(z'58455A4D', kind=i32)
+    integer(i32), parameter      :: CUDA_EXEC_BUFFER_VERSION = 3_i32
+    integer(i32), parameter      :: CUDA_EXEC_BUFFER_HEADER_BYTES = 72_i32
+    integer(i32), parameter      :: CUDA_EXEC_BUFFER_ENTRY_BYTES = 104_i32
+    integer(i8)                  :: buffer_bytes(CUDA_EXEC_BUFFER_HEADER_BYTES + (4_i32 * CUDA_EXEC_BUFFER_ENTRY_BYTES))
+    integer                      :: unit_id
+
+    buffer_bytes = 0_i8
+    call write_fixture_i32_le(buffer_bytes, 0_i32, CUDA_EXEC_BUFFER_MAGIC)
+    call write_fixture_i32_le(buffer_bytes, 4_i32, CUDA_EXEC_BUFFER_VERSION)
+    call write_fixture_i32_le(buffer_bytes, 8_i32, CUDA_EXEC_BUFFER_HEADER_BYTES)
+    call write_fixture_i32_le(buffer_bytes, 12_i32, CUDA_EXEC_BUFFER_ENTRY_BYTES)
+    call write_fixture_i32_le(buffer_bytes, 16_i32, 4_i32)
+    call write_fixture_i32_le(buffer_bytes, 20_i32, usage_count)
+    call write_fixture_i64_le(buffer_bytes, 24_i32, usage_hash)
+    call write_fixture_i64_le(buffer_bytes, 32_i32, usage_bytes)
+    call write_fixture_i64_le(buffer_bytes, 40_i32, first_pack_offset)
+    call write_fixture_i64_le(buffer_bytes, 48_i32, last_pack_offset)
+    call write_fixture_i64_le(buffer_bytes, 56_i32, last_pack_bytes)
+
+    open(newunit=unit_id, file=trim(full_path), status="replace", access="stream", form="unformatted", action="write")
+    write(unit_id) buffer_bytes
+    close(unit_id)
+  end subroutine write_empty_pack_execution_buffer_fixture
 
   subroutine write_pack_dispatch_buffer_fixture(full_path, entry_count, usage_hash, usage_count_override)
     character(len=*), intent(in) :: full_path

@@ -26,6 +26,11 @@ def main() -> int:
         "build/tests/test_opaque_handles",
         REPO_ROOT / "include" / "mizu.h",
     )
+    expect_target_is_out_of_date(
+        "direct targets should rebuild when the Makefile recipe changes",
+        "build/tests/test_cache_keys",
+        REPO_ROOT / "Makefile",
+    )
 
     print("test_make_dependencies: PASS")
     return 0

@@ -107,6 +107,8 @@ TOOL_TESTS := \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
 
+BUILD_RECIPE_INPUTS := Makefile
+
 UNIT_COMMON_F90 := \
 	src/common/mod_kinds.f90 \
 	src/common/mod_status.f90 \
@@ -287,6 +289,8 @@ $(BUILD_DIR):
 
 $(TEST_DIR):
 	mkdir -p $(TEST_DIR)
+
+$(UNIT_BINS) $(CONTRACT_BINS) $(CONTRACT_SMOKES) $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ): $(BUILD_RECIPE_INPUTS)
 
 ifeq ($(HAVE_NVCC),1)
 CUDA_BRIDGE_SRC := src/backends/cuda/cuda_bridge.cu

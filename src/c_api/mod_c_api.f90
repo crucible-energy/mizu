@@ -33,8 +33,8 @@ module mod_c_api
                            MIZU_CACHE_FLAG_NONE, MIZU_CACHE_FLAG_WEIGHT_HIT, &
                            MIZU_CACHE_FLAG_PLAN_HIT, MIZU_CACHE_FLAG_SESSION_HIT, &
                            MIZU_CACHE_FLAG_MM_HIT, MIZU_CACHE_FLAG_WINNER_REUSED, &
-                           MIZU_MODALITY_KIND_IMAGE, &
-                           MIZU_STORAGE_KIND_ENCODED_BYTES, &
+                           MIZU_MODALITY_KIND_IMAGE, MIZU_MODALITY_KIND_PROJECTOR_EMBEDDINGS, &
+                           MIZU_STORAGE_KIND_ENCODED_BYTES, MIZU_STORAGE_KIND_PROJECTOR_EMBEDDINGS, &
                            MIZU_DTYPE_U8, MIZU_DTYPE_I32, MIZU_DTYPE_F16, MIZU_DTYPE_BF16, &
                            MIZU_DTYPE_F32, &
                            MIZU_LIFETIME_POLICY_COPY, MIZU_LIFETIME_POLICY_BORROW_UNTIL_PREFILL, &
@@ -1109,6 +1109,7 @@ contains
     character(len=MAX_CACHE_KEY_LEN) :: prefill_optimization_key_text
     character(len=MAX_CACHE_KEY_LEN) :: prefill_candidate_key_text
     logical      :: has_modal_inputs
+    logical      :: needs_projector_stage
     logical      :: projector_workspace_reserved
     logical      :: prefill_workspace_reserved
     type(execution_report) :: projector_report
@@ -1143,7 +1144,6 @@ contains
     end if
 
     has_modal_inputs = (session%staged_modal_count > 0_i32)
-    required_reports = merge(2_i64, 1_i64, has_modal_inputs)
     kv_before = session%kv_token_count
     staged_tokens_before = session%staged_token_count
     staged_token_hash_before = session%staged_token_hash
@@ -1153,6 +1153,9 @@ contains
     staged_modal_kind_before = session%staged_modal_kind
     staged_modal_dtype_before = session%staged_modal_dtype
     staged_modal_slot_name_before = session%staged_modal_slot_name
+    needs_projector_stage = has_modal_inputs .and. &
+      staged_modal_kind_before /= MIZU_MODALITY_KIND_PROJECTOR_EMBEDDINGS
+    required_reports = merge(2_i64, 1_i64, needs_projector_stage)
     prefill_cold_state = merge(MIZU_COLD_STATE_WARM, MIZU_COLD_STATE_COLD, session%has_live_context)
 
     status_code = prepare_report_buffer(out_reports_ptr, required_reports)
@@ -1167,7 +1170,8 @@ contains
       return
     end if
 
-    if (has_modal_inputs) then
+    projector_embedding_count = 0_i64
+    if (needs_projector_stage) then
       call prepare_projector_stage_candidate(runtime, optimization_store, model, staged_modal_byte_count_before, &
         staged_modal_kind_before, staged_modal_dtype_before, staged_modal_slot_name_before, &
         projector_optimization_key_text, projector_candidate_key_text, projector_plan_id, &
@@ -1181,7 +1185,6 @@ contains
       end if
 
       stage_started_us = monotonic_timestamp_us()
-      projector_embedding_count = 0_i64
       if (projector_backend_family == MIZU_BACKEND_FAMILY_APPLE .and. &
           (projector_route == MIZU_EXEC_ROUTE_ANE .or. projector_route == MIZU_EXEC_ROUTE_METAL)) then
         call execute_apple_projector(runtime%config%cache_root, trim(projector_artifact_metadata%payload_path), &
@@ -1213,6 +1216,7 @@ contains
         projector_cache_flags, projector_plan_id, projector_elapsed_us)
     else
       projector_report = execution_report()
+      if (has_modal_inputs) projector_embedding_count = max(1_i64, int(staged_modal_before, kind=i64))
     end if
 
     call prepare_plan_stage_candidate(runtime, optimization_store, model, MIZU_STAGE_PREFILL, &
@@ -6213,20 +6217,34 @@ contains
       return
     end if
 
-    if (int(input%modality_kind, kind=i32) /= MIZU_MODALITY_KIND_IMAGE) then
-      status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
-      return
-    end if
+    select case (int(input%modality_kind, kind=i32))
+    case (MIZU_MODALITY_KIND_IMAGE)
+      if (int(input%storage_kind, kind=i32) /= MIZU_STORAGE_KIND_ENCODED_BYTES) then
+        status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+        return
+      end if
 
-    if (int(input%storage_kind, kind=i32) /= MIZU_STORAGE_KIND_ENCODED_BYTES) then
-      status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
-      return
-    end if
+      if (int(input%dtype, kind=i32) /= MIZU_DTYPE_U8) then
+        status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+        return
+      end if
+    case (MIZU_MODALITY_KIND_PROJECTOR_EMBEDDINGS)
+      if (int(input%storage_kind, kind=i32) /= MIZU_STORAGE_KIND_PROJECTOR_EMBEDDINGS) then
+        status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+        return
+      end if
 
-    if (int(input%dtype, kind=i32) /= MIZU_DTYPE_U8) then
+      select case (int(input%dtype, kind=i32))
+      case (MIZU_DTYPE_F16, MIZU_DTYPE_BF16, MIZU_DTYPE_F32)
+        continue
+      case default
+        status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
+        return
+      end select
+    case default
       status_code = MIZU_STATUS_UNSUPPORTED_MODALITY
       return
-    end if
+    end select
 
     if (int(input%rank, kind=i32) /= 0_i32 .or. c_associated(input%shape)) then
       status_code = MIZU_STATUS_INVALID_ARGUMENT

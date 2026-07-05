@@ -1276,6 +1276,76 @@ program test_cuda_executor
   call expect_true("cuda payload-only replay should preserve readable lineage", snapshot_valid)
   payload_only_decode_artifact_hash = artifact_hash
 
+  call write_invalid_payload_fixture(trim(cache_root) // "/" // trim(decode_usage_path), &
+    "candidate=decode_usage;stage=4;format=cuda_bf16_decode_plan_v1;" // &
+    "pack_dependency=cuda_import_weight_pack_v1;" // &
+    "pack_use_kind=cuda_decode_pack_usage_v1;" // &
+    "pack_dispatch_kind=cuda_pack_dispatch_v1;" // &
+    "pack_span_root=" // import_bundle_root // ";" // &
+    "pack_use1=token_embeddings|embedding_table|offset=0|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch1=offset=0|bytes=1089994752|role=1|layout=1;" // &
+    "pack_span1=weights/token_embeddings.bin|sample_bytes=64;" // &
+    "pack_use2=decoder_blocks|decoder_stack|offset=1089994752|bytes=25690112|layout=packed;" // &
+    "pack_dispatch2=offset=1089994752|bytes=25690112|role=2|layout=2;" // &
+    "pack_span2=weights/decoder_blocks.bin|sample_bytes=64;" // &
+    "pack_use3=final_norm|normalization|offset=1115684864|bytes=14336|layout=vector;" // &
+    "pack_dispatch3=offset=1115684864|bytes=14336|role=3|layout=3;" // &
+    "pack_span3=weights/final_norm.bin|sample_bytes=64;" // &
+    "pack_use4=lm_head|token_projection|offset=1115699200|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch4=offset=1115699200|bytes=1089994752|role=4|layout=1;" // &
+    "pack_span4=weights/lm_head.bin|sample_bytes=64;" // &
+    "pack_dispatch_count=4;pack_use_count=4;pack_use_bytes=4096;" // &
+    "pack_use_first_offset=17;pack_use_last_offset=23;" // &
+    "pack_use_last_bytes=29;pack_use_hash=2222222222222222")
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload-only replay should ignore stale payload summary geometry", &
+    status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload-only replay should keep readable lineage with stale payload summary geometry", &
+    snapshot_valid)
+  call expect_equal_i64("cuda payload-only replay should preserve artifact lineage with stale payload summary geometry", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload-only replay should preserve token identity with stale payload summary geometry", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+  call extract_cuda_context_pack_usage_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, &
+    pack_usage_hash, pack_usage_bytes, first_pack_offset, last_pack_offset, last_pack_bytes, pack_usage_count, &
+    snapshot_valid)
+  call expect_true("cuda payload-only replay pack-usage snapshot should be readable with stale payload summary geometry", &
+    snapshot_valid)
+  call expect_equal_i64("cuda payload-only replay should refresh payload usage bytes from embedded entries", &
+    pack_usage_bytes, 2205693952_i64)
+  call expect_equal_i64("cuda payload-only replay should refresh the first payload pack offset from embedded entries", &
+    first_pack_offset, 0_i64)
+  call expect_equal_i64("cuda payload-only replay should refresh the last payload pack offset from embedded entries", &
+    last_pack_offset, 1115699200_i64)
+  call expect_equal_i64("cuda payload-only replay should refresh the last payload pack bytes from embedded entries", &
+    last_pack_bytes, 1089994752_i64)
+  call write_invalid_payload_fixture(trim(cache_root) // "/" // trim(decode_usage_path), &
+    "candidate=decode_usage;stage=4;format=cuda_bf16_decode_plan_v1;" // &
+    "pack_dependency=cuda_import_weight_pack_v1;" // &
+    "pack_use_kind=cuda_decode_pack_usage_v1;" // &
+    "pack_dispatch_kind=cuda_pack_dispatch_v1;" // &
+    "pack_span_root=" // import_bundle_root // ";" // &
+    "pack_use1=token_embeddings|embedding_table|offset=0|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch1=offset=0|bytes=1089994752|role=1|layout=1;" // &
+    "pack_span1=weights/token_embeddings.bin|sample_bytes=64;" // &
+    "pack_use2=decoder_blocks|decoder_stack|offset=1089994752|bytes=25690112|layout=packed;" // &
+    "pack_dispatch2=offset=1089994752|bytes=25690112|role=2|layout=2;" // &
+    "pack_span2=weights/decoder_blocks.bin|sample_bytes=64;" // &
+    "pack_use3=final_norm|normalization|offset=1115684864|bytes=14336|layout=vector;" // &
+    "pack_dispatch3=offset=1115684864|bytes=14336|role=3|layout=3;" // &
+    "pack_span3=weights/final_norm.bin|sample_bytes=64;" // &
+    "pack_use4=lm_head|token_projection|offset=1115699200|bytes=1089994752|layout=row_major;" // &
+    "pack_dispatch4=offset=1115699200|bytes=1089994752|role=4|layout=1;" // &
+    "pack_span4=weights/lm_head.bin|sample_bytes=64;" // &
+    "pack_dispatch_count=4;pack_use_count=4;pack_use_bytes=2205693952;" // &
+    "pack_use_first_offset=0;pack_use_last_offset=1115699200;" // &
+    "pack_use_last_bytes=1089994752;pack_use_hash=2222222222222222")
+
   call write_empty_pack_execution_buffer_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path), 4_i32, &
     2205693952_i64, 0_i64, 1115699200_i64, 1089994752_i64, 2222222222222222_i64)
   call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &

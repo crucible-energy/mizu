@@ -19,6 +19,7 @@ program test_cache_keys
   type(plan_cache_key)             :: plan_key_a
   type(plan_cache_key)             :: plan_key_b
   type(weight_cache_key)           :: weight_key
+  type(weight_cache_key)           :: weight_key_backend_changed
   type(session_cache_key)          :: session_key
   type(multimodal_cache_key)       :: mm_key
   integer(i64)                     :: shape(3)
@@ -42,6 +43,10 @@ program test_cache_keys
 
   call build_weight_cache_key(manifest, "apple-m2", "packed-bf16", MIZU_BACKEND_FAMILY_APPLE, &
     MIZU_EXEC_ROUTE_ANE, weight_key, versions)
+  versions%backend_version = 12_i32
+  call build_weight_cache_key(manifest, "apple-m2", "packed-bf16", MIZU_BACKEND_FAMILY_APPLE, &
+    MIZU_EXEC_ROUTE_ANE, weight_key_backend_changed, versions)
+  versions%backend_version = 11_i32
   call build_session_cache_key(manifest, "apple-m2", MIZU_BACKEND_FAMILY_APPLE, &
     MIZU_EXEC_ROUTE_ANE, 8192_i64, 512_i64, session_key, versions)
   call build_multimodal_cache_key(manifest, "apple-m2", "image", MIZU_MODALITY_KIND_IMAGE, &
@@ -49,8 +54,11 @@ program test_cache_keys
 
   call expect_contains("plan key prefix", trim(plan_key_a%key_text), "plan:v")
   call expect_contains("weight key prefix", trim(weight_key%key_text), "weight:v")
+  call expect_contains("weight key backend version", trim(weight_key%key_text), ":backendv=11")
   call expect_contains("session key prefix", trim(session_key%key_text), "session:v")
   call expect_contains("multimodal key prefix", trim(mm_key%key_text), "mm:v")
+  call expect_not_equal_string("backend version should change weight key", &
+    trim(weight_key%key_text), trim(weight_key_backend_changed%key_text))
 
   write(*, "(A)") "test_cache_keys: PASS"
 
@@ -88,5 +96,16 @@ contains
       error stop 1
     end if
   end subroutine expect_contains
+
+  subroutine expect_not_equal_string(label, actual, expected)
+    character(len=*), intent(in) :: label
+    character(len=*), intent(in) :: actual
+    character(len=*), intent(in) :: expected
+
+    if (trim(actual) == trim(expected)) then
+      write(*, "(A)") trim(label) // " unexpectedly matched"
+      error stop 1
+    end if
+  end subroutine expect_not_equal_string
 
 end program test_cache_keys

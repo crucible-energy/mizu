@@ -21,6 +21,7 @@ program test_weight_cache
   type(runtime_weight_cache)       :: reloaded_cache
   type(runtime_weight_cache)       :: warmed_cache
   type(weight_cache_key)           :: cuda_key
+  type(weight_cache_key)           :: backend_changed_key
   type(weight_cache_key)           :: route_changed_key
   type(weight_cache_key)           :: pack_changed_key
   type(weight_cache_key)           :: malformed_key
@@ -42,6 +43,10 @@ program test_weight_cache
 
   call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v1', &
     MIZU_BACKEND_FAMILY_CUDA, MIZU_EXEC_ROUTE_CUDA, cuda_key, versions)
+  versions%backend_version = 12_i32
+  call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v1', &
+    MIZU_BACKEND_FAMILY_CUDA, MIZU_EXEC_ROUTE_CUDA, backend_changed_key, versions)
+  versions%backend_version = 11_i32
   call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v1', &
     MIZU_BACKEND_FAMILY_APPLE, MIZU_EXEC_ROUTE_ANE, route_changed_key, versions)
   call build_weight_cache_key(manifest, 'cuda "sm80"', 'cuda "pack" v2', &
@@ -77,6 +82,8 @@ program test_weight_cache
 
   call lookup_weight_cache_entry(cache, route_changed_key, record, found)
   call expect_false("route-changed weight key should miss", found)
+  call lookup_weight_cache_entry(cache, backend_changed_key, record, found)
+  call expect_false("backend-version-changed weight key should miss", found)
   call lookup_weight_cache_entry(cache, pack_changed_key, record, found)
   call expect_false("pack-format-changed weight key should miss", found)
 
@@ -90,6 +97,10 @@ program test_weight_cache
   malformed_key%key_text = ""
   call record_weight_cache_entry(cache, malformed_key, artifact_metadata_record(), status_code)
   call expect_equal_i32("malformed weight key should be rejected", status_code, MIZU_STATUS_INVALID_ARGUMENT)
+  malformed_key = cuda_key
+  malformed_key%key_text = trim(remove_backend_version_segment(cuda_key%key_text))
+  call expect_false("weight key missing backend version should not be strict", &
+    weight_cache_key_is_strict(malformed_key))
 
   metadata%execution_route = MIZU_EXEC_ROUTE_CUDA
   metadata%payload_fingerprint = 'PACK "B"'
@@ -285,5 +296,25 @@ contains
     end do
     if (dest_index > 0_i32) quoted_text = '"' // quoted_text(2:dest_index + 1_i32) // '"'
   end function quote_field
+
+  function remove_backend_version_segment(key_text) result(rewritten_key)
+    character(len=*), intent(in) :: key_text
+    character(len=len(key_text)) :: rewritten_key
+    integer(i32) :: start_index
+    integer(i32) :: end_index
+
+    rewritten_key = key_text
+    start_index = index(key_text, ":backendv=")
+    if (start_index <= 0_i32) return
+
+    end_index = index(key_text(start_index + 1:), ":")
+    if (end_index <= 0_i32) then
+      rewritten_key = key_text(:start_index - 1_i32)
+      return
+    end if
+
+    end_index = start_index + end_index - 1_i32
+    rewritten_key = key_text(:start_index - 1_i32) // key_text(end_index:)
+  end function remove_backend_version_segment
 
 end program test_weight_cache

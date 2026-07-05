@@ -154,6 +154,7 @@ contains
       index(key%key_text, ":abi=" // trim(i32_to_text(key%versions%abi_version))) > 0 .and. &
       index(key%key_text, ":planner=" // trim(i32_to_text(key%versions%planner_version))) > 0 .and. &
       index(key%key_text, ":packv=" // trim(i32_to_text(key%versions%pack_version))) > 0 .and. &
+      index(key%key_text, ":backendv=" // trim(i32_to_text(key%versions%backend_version))) > 0 .and. &
       index(key%key_text, ":model=" // trim(i64_to_text(key%logical_model_hash))) > 0 .and. &
       index(key%key_text, ":backend=" // trim(i32_to_text(key%backend_family))) > 0 .and. &
       index(key%key_text, ":route=" // trim(i32_to_text(key%execution_route))) > 0 .and. &

@@ -161,6 +161,7 @@ contains
       ":abi=" // trim(i32_to_text(key%versions%abi_version)) // &
       ":planner=" // trim(i32_to_text(key%versions%planner_version)) // &
       ":packv=" // trim(i32_to_text(key%versions%pack_version)) // &
+      ":backendv=" // trim(i32_to_text(key%versions%backend_version)) // &
       ":model=" // trim(i64_to_text(key%logical_model_hash)) // &
       ":proj=" // trim(i64_to_text(key%projector_revision)) // &
       ":fam=" // trim(i32_to_text(key%model_family)) // &

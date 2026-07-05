@@ -42,11 +42,14 @@ int main(void) {
     mizu_model_t *model = NULL;
     mizu_session_t *session = NULL;
     mizu_status_code_t status;
+    int32_t token_values[3] = {1, 2, 3};
+    uint8_t image_bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     size_t required_bytes;
     char error_buffer[256];
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
+    mizu_modal_input_desc_t modal_input;
     mizu_output_buffer_t output_buffer;
     mizu_execution_report_t model_report;
     mizu_execution_report_t resume_reports[1];
@@ -171,6 +174,37 @@ int main(void) {
     if (!expect_status("model report after session failures", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("session failures should not mutate model last report",
                      model_report.stage_kind == MIZU_STAGE_MODEL_LOAD)) return 1;
+
+    status = mizu_session_attach_tokens(session, token_values, 3, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens before parked-state setup", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_prefill(session, NULL);
+    if (!expect_status("prefill before parked-state setup", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_park(session, NULL);
+    if (!expect_status("park before attachment-state failures", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_attach_tokens(session, token_values, 3, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens while parked", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("parked token-attach failure should publish runtime error text",
+                     strstr(error_buffer, "session cannot attach tokens in current state") != NULL)) return 1;
+
+    memset(&modal_input, 0, sizeof(modal_input));
+    modal_input.struct_size = sizeof(modal_input);
+    modal_input.slot_name_z = "image";
+    modal_input.placeholder_ordinal = 1;
+    modal_input.modality_kind = MIZU_MODALITY_KIND_IMAGE;
+    modal_input.storage_kind = MIZU_STORAGE_KIND_ENCODED_BYTES;
+    modal_input.dtype = MIZU_DTYPE_U8;
+    modal_input.data = image_bytes;
+    modal_input.byte_count = sizeof(image_bytes);
+    modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
+    modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
+
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input while parked", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("parked modal-attach failure should replace earlier error text",
+                     strstr(error_buffer, "session cannot attach modal input in current state") != NULL)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

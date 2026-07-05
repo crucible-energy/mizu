@@ -986,6 +986,9 @@ contains
     end if
 
     call stage_tokens(session, int(token_count, kind=i64), status_code, int(token_values, kind=i32))
+    if (status_code == MIZU_STATUS_INVALID_STATE) then
+      call set_session_owner_runtime_error(session, status_code, "session cannot attach tokens in current state")
+    end if
     mizu_session_attach_tokens = int(status_code, kind=c_int32_t)
   end function mizu_session_attach_tokens
 
@@ -1047,6 +1050,9 @@ contains
       call stage_modal_input(session, status_code, int(input%byte_count, kind=i64), &
         int(input%modality_kind, kind=i32), int(input%dtype, kind=i32), &
         copy_c_string_ptr(input%slot_name_z, "image"))
+    end if
+    if (status_code == MIZU_STATUS_INVALID_STATE) then
+      call set_session_owner_runtime_error(session, status_code, "session cannot attach modal input in current state")
     end if
     mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
   end function mizu_session_attach_modal_input

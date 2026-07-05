@@ -27,6 +27,7 @@ program test_cache_store
   logical                       :: found
   character(len=*), parameter :: store_path = "/tmp/mizu_test_artifact_cache.txt"
   character(len=*), parameter :: blocked_store_path = "/tmp/mizu_test_artifact_cache_blocked.txt"
+  character(len=*), parameter :: partial_store_path = "/tmp/mizu_test_artifact_cache_partial.txt"
 
   call initialize_runtime_cache_bundle(bundle)
   call touch_weight_cache_key(bundle, 'weight key "ane"', was_hit)
@@ -191,6 +192,16 @@ program test_cache_store
   call expect_false("unreadable artifact cache load should clear stale metadata", found)
   call execute_command_line("rm -f " // blocked_store_path)
 
+  call write_partial_store_fixture(partial_store_path)
+  call initialize_runtime_cache_bundle(reloaded_bundle)
+  call load_runtime_cache_bundle(reloaded_bundle, partial_store_path, loaded_ok)
+  call expect_true("partial artifact cache load should still succeed", loaded_ok)
+  call touch_weight_cache_key(reloaded_bundle, 'partial weight key', was_hit)
+  call expect_false("partial artifact cache should not create false weight hit", was_hit)
+  call lookup_weight_artifact_metadata(reloaded_bundle, 'partial weight key', reloaded_metadata, found)
+  call expect_false("partial artifact cache should not create weight metadata", found)
+  call execute_command_line("rm -f " // partial_store_path)
+
   call execute_command_line("rm -f " // store_path)
   write(*, "(A)") "test_cache_store: PASS"
 
@@ -260,5 +271,14 @@ contains
     call execute_command_line("chmod 000 " // trim(file_path), exitstat=exitstat)
     call expect_equal_i32("chmod blocked artifact cache file", exitstat, 0)
   end subroutine prepare_unreadable_file
+
+  subroutine write_partial_store_fixture(file_path)
+    character(len=*), intent(in) :: file_path
+    integer :: unit_id
+
+    open(newunit=unit_id, file=trim(file_path), status="replace", action="write")
+    write(unit_id, "(A)") 'weight "partial weight key"'
+    close(unit_id)
+  end subroutine write_partial_store_fixture
 
 end program test_cache_store

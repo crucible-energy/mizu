@@ -220,23 +220,7 @@ contains
 
       select case (trim(tag))
       case ("weight", "plan", "session", "mm")
-        key_text = ""
-        read(line, *, iostat=ios) tag, key_text
-        if (ios /= 0) cycle
-        if (len_trim(key_text) == 0) cycle
-
-        select case (trim(tag))
-        case ("weight")
-          call remember_cache_key(bundle%weight_store, trim(key_text))
-        case ("plan")
-          call remember_cache_key(bundle%plan_store, trim(key_text))
-        case ("session")
-          call remember_cache_key(bundle%session_store, trim(key_text))
-        case ("mm")
-          call remember_cache_key(bundle%multimodal_store, trim(key_text))
-        case default
-          cycle
-        end select
+        cycle
       case ("meta")
         kind_tag = ""
         key_text = ""
@@ -292,13 +276,9 @@ contains
     open(newunit=unit_id, file=trim(file_path), status="replace", action="write", iostat=ios)
     if (ios /= 0) return
 
-    call write_cache_key_store(unit_id, "weight", bundle%weight_store, ios)
-    if (ios == 0_i32) call write_artifact_metadata_store(unit_id, "weight", bundle%weight_store, ios)
-    if (ios == 0_i32) call write_cache_key_store(unit_id, "plan", bundle%plan_store, ios)
+    call write_artifact_metadata_store(unit_id, "weight", bundle%weight_store, ios)
     if (ios == 0_i32) call write_artifact_metadata_store(unit_id, "plan", bundle%plan_store, ios)
-    if (ios == 0_i32) call write_cache_key_store(unit_id, "session", bundle%session_store, ios)
     if (ios == 0_i32) call write_artifact_metadata_store(unit_id, "session", bundle%session_store, ios)
-    if (ios == 0_i32) call write_cache_key_store(unit_id, "mm", bundle%multimodal_store, ios)
     if (ios == 0_i32) call write_artifact_metadata_store(unit_id, "mm", bundle%multimodal_store, ios)
     if (ios /= 0_i32) then
       close(unit_id)
@@ -344,14 +324,6 @@ contains
     store%metadata(store%entry_count) = artifact_metadata_record()
   end subroutine touch_cache_key_store
 
-  subroutine remember_cache_key(store, key_text)
-    type(cache_key_store), intent(inout) :: store
-    character(len=*), intent(in)         :: key_text
-    logical                              :: was_hit
-
-    call touch_cache_key_store(store, key_text, was_hit)
-  end subroutine remember_cache_key
-
   subroutine record_cache_key_metadata(store, key_text, metadata)
     type(cache_key_store), intent(inout)        :: store
     character(len=*), intent(in)                :: key_text
@@ -395,22 +367,6 @@ contains
       end if
     end do
   end subroutine lookup_cache_key_metadata
-
-  subroutine write_cache_key_store(unit_id, tag, store, ios)
-    integer(i32), intent(in)          :: unit_id
-    character(len=*), intent(in)      :: tag
-    type(cache_key_store), intent(in) :: store
-    integer(i32), intent(inout)       :: ios
-    integer(i32)                      :: index
-    character(len=(2 * MAX_CACHE_KEY_LEN) + 2) :: quoted_key_text
-
-    do index = 1_i32, store%entry_count
-      if (len_trim(store%entries(index)) == 0) cycle
-      quoted_key_text = quote_persisted_text(store%entries(index), MAX_CACHE_KEY_LEN)
-      write(unit_id, "(A,1X,A)", iostat=ios) trim(tag), trim(quoted_key_text)
-      if (ios /= 0_i32) return
-    end do
-  end subroutine write_cache_key_store
 
   subroutine write_artifact_metadata_store(unit_id, tag, store, ios)
     integer(i32), intent(in)          :: unit_id

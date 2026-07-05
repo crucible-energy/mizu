@@ -1503,6 +1503,7 @@ contains
     logical                                      :: applied_dispatch_buffer
     logical                                      :: applied_usage_buffer
     logical                                      :: found_span_record
+    logical                                      :: applied_cached_entry_data
     integer(i32)                                 :: resolved_span_pack_index
 
     loaded_cached = .false.
@@ -1511,6 +1512,7 @@ contains
     usage_buffer_count = 0_i32
     span_buffer_count = 0_i32
     exec_buffer_count = 0_i32
+    applied_cached_entry_data = .false.
     if (allocated(pack_tile_buffer_bytes)) deallocate(pack_tile_buffer_bytes)
     if (allocated(dispatch_buffer_bytes)) deallocate(dispatch_buffer_bytes)
     if (allocated(usage_buffer_bytes)) deallocate(usage_buffer_bytes)
@@ -1774,6 +1776,7 @@ contains
           resolved_span_pack_index, pack_usage%entry_span_hashes(entry_index), &
           pack_usage%entry_span_bytes(entry_index), pack_usage%entry_span_samples(:, entry_index), &
           pack_usage%entry_span_sample_sizes(entry_index), found_span_record)
+        if (found_span_record) applied_cached_entry_data = .true.
         if (found_span_record .and. pack_usage%entry_pack_indices(entry_index) <= 0_i32 .and. &
             resolved_span_pack_index > 0_i32) then
           pack_usage%entry_pack_indices(entry_index) = resolved_span_pack_index
@@ -1803,6 +1806,7 @@ contains
           call decode_hex_to_span_bytes(trim(value_text), pack_usage%entry_span_samples(:, entry_index), &
             pack_usage%entry_span_sample_sizes(entry_index))
         end if
+        applied_cached_entry_data = .true.
       end if
 
       write(key_text, '("entry",I0,"_page_hash=")') entry_index
@@ -1845,6 +1849,7 @@ contains
           tile_byte_count, tile_bytes, materialized_hash, found_materialized_hash, found_pack_record)
       end if
       if (found_pack_record) then
+        applied_cached_entry_data = .true.
         if (resolved_pack_index > 0_i32) pack_usage%entry_pack_indices(entry_index) = resolved_pack_index
         if (resolved_entry_offset >= 0_i64) pack_usage%entry_offsets(entry_index) = resolved_entry_offset
         if (resolved_entry_bytes > 0_i64) pack_usage%entry_bytes(entry_index) = resolved_entry_bytes
@@ -1862,6 +1867,7 @@ contains
         found_tile_hex = (tile_byte_count > 0_i32)
       else if (found_page_words .and. found_page_hex .and. page_word_count > 0_i32) then
         call decode_hex_to_page_words(trim(value_text), page_words, page_word_count)
+        applied_cached_entry_data = .true.
       else if (pack_usage%entry_span_sample_sizes(entry_index) > 0_i32) then
         call build_cuda_pack_page_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
           pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), &
@@ -1917,6 +1923,7 @@ contains
       if (.not. found_pack_record) tile_bytes = 0_i8
       if (.not. found_pack_record .and. found_tile_bytes .and. found_tile_hex .and. tile_byte_count > 0_i32) then
         call decode_hex_to_tile_bytes(trim(value_text), tile_bytes, tile_byte_count)
+        applied_cached_entry_data = .true.
       else if (.not. found_pack_record .and. pack_usage%entry_span_sample_sizes(entry_index) > 0_i32) then
         call build_cuda_pack_tile_record(pack_usage%entry_offsets(entry_index), pack_usage%entry_bytes(entry_index), &
           pack_usage%role_codes(entry_index), pack_usage%layout_codes(entry_index), &
@@ -1939,10 +1946,7 @@ contains
     if (allocated(usage_buffer_bytes)) deallocate(usage_buffer_bytes)
     if (allocated(span_buffer_bytes)) deallocate(span_buffer_bytes)
     if (allocated(exec_buffer_bytes)) deallocate(exec_buffer_bytes)
-    loaded_cached = required_entry_found .and. &
-      (loaded_span_cache .or. loaded_span_buffer .or. loaded_pack_tile_cache .or. loaded_pack_tile_payload .or. &
-       loaded_pack_tile_buffer .or. loaded_usage_buffer .or. loaded_exec_buffer .or. applied_dispatch_buffer .or. &
-       applied_usage_buffer .or. applied_exec_buffer)
+    loaded_cached = required_entry_found .and. applied_cached_entry_data
   end subroutine hydrate_cached_pack_span_profile
 
   subroutine hydrate_pack_execution_buffer(buffer_bytes, buffer_count, pack_usage, applied_ok)

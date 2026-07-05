@@ -42,6 +42,7 @@ program test_cuda_executor
   integer(i32) :: token_value_with_static_text_override
   integer(i32) :: token_value_with_dispatch_buffer_only
   integer(i32) :: token_value_without_pack_cache
+  integer(i32) :: token_value_with_payload_fallback
   integer(i32) :: context_byte_count_a
   integer(i32) :: context_byte_count_b
   integer(i32) :: decode_context_byte_count
@@ -60,6 +61,7 @@ program test_cuda_executor
   integer(i64) :: artifact_hash
   integer(i64) :: usage_decode_artifact_hash
   integer(i64) :: binary_only_decode_artifact_hash
+  integer(i64) :: payload_only_decode_artifact_hash
   integer(i64) :: pack_usage_hash
   integer(i64) :: pack_usage_bytes
   integer(i64) :: first_pack_offset
@@ -1169,6 +1171,53 @@ program test_cuda_executor
   call expect_true("cuda decode should reflect pack-owned materialized identity when available", &
     token_value_with_other_context /= token_value_with_pack_cache)
 
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_usage_buffer_path) // " " // &
+    cache_root // "/" // trim(decode_dispatch_buffer_path) // " " // cache_root // "/" // trim(decode_span_buffer_path) // &
+    " " // cache_root // "/" // trim(decode_span_cache_path) // " " // cache_root // "/" // trim(decode_exec_buffer_path) // &
+    " " // cache_root // "/" // trim(pack_tile_cache_path) // " " // cache_root // "/" // trim(pack_tile_payload_path) // &
+    " " // cache_root // "/" // trim(pack_tile_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda payload-only replay cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_payload_fallback, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload-only replay should still succeed", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload-only replay should preserve readable lineage", snapshot_valid)
+  payload_only_decode_artifact_hash = artifact_hash
+
+  call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_usage_buffer_path))
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore malformed usage summaries", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with a malformed usage summary", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with a malformed usage summary", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with a malformed usage summary", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
+  call execute_command_line("rm -f " // cache_root // "/" // trim(decode_usage_buffer_path), exitstat=shell_status)
+  call expect_equal_i32("cuda malformed usage-summary cleanup should succeed", int(shell_status, kind=i32), 0_i32)
+  call write_invalid_blob_fixture(trim(cache_root) // "/" // trim(decode_exec_buffer_path))
+  call execute_cuda_decode(cache_root, decode_usage_path, 42_i64, 1_i64, emitted_token_count, &
+    token_value_with_other_context, stop_reason, status_code, workspace%host_buffer, workspace%bytes_in_use, &
+    usage_context_bytes, usage_context_byte_count, usage_decode_context_bytes, usage_decode_context_byte_count)
+  call expect_equal_i32("cuda payload replay should ignore malformed exec buffers", status_code, MIZU_STATUS_OK)
+  call extract_cuda_context_state_snapshot(usage_decode_context_bytes, usage_decode_context_byte_count, producer_stage, &
+    artifact_hash, token_digest, modal_digest, kv_token_count, decode_step_count, rolling_state_digest, &
+    summary_primary_count, summary_secondary_count, summary_control_a, summary_control_b, snapshot_valid)
+  call expect_true("cuda payload replay should keep readable lineage with a malformed exec buffer", snapshot_valid)
+  call expect_equal_i64("cuda payload replay should preserve artifact lineage with a malformed exec buffer", &
+    artifact_hash, payload_only_decode_artifact_hash)
+  call expect_equal_i32("cuda payload replay should preserve token identity with a malformed exec buffer", &
+    token_value_with_other_context, token_value_with_payload_fallback)
+
   open(unit=12, file=trim(cache_root) // "/" // trim(decode_path), status="replace", action="write")
   write(12, "(A)") "candidate=decode;stage=4;format=cuda_bf16_decode_plan_v2"
   close(12)
@@ -1662,6 +1711,17 @@ contains
     write(unit_id, "(A)") "kind=cuda_pack_span_cache_v4;pack_tile_cache=" // trim(pack_tile_cache_path)
     close(unit_id)
   end subroutine write_pack_span_cache_fixture
+
+  subroutine write_invalid_blob_fixture(full_path)
+    character(len=*), intent(in) :: full_path
+    integer(i8)                  :: invalid_bytes(1)
+    integer                      :: unit_id
+
+    invalid_bytes = [1_i8]
+    open(newunit=unit_id, file=trim(full_path), status="replace", access="stream", form="unformatted", action="write")
+    write(unit_id) invalid_bytes
+    close(unit_id)
+  end subroutine write_invalid_blob_fixture
 
   subroutine read_fixture_span_record(bundle_root, source_path, span_hash, sample_bytes_i64, sample_bytes, sample_count)
     character(len=*), intent(in) :: bundle_root

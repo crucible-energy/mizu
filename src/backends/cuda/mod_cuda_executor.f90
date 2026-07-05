@@ -937,8 +937,8 @@ contains
         pack_tile_buffer_count, loaded_pack_tile_buffer)
     end if
     if (loaded_pack_tile_buffer) then
-      call build_weight_pack_buffer_dependency_hash(pack_tile_buffer_bytes, pack_tile_buffer_count, dependency_hash, &
-        has_dependency)
+      call build_weight_pack_buffer_dependency_hash(pack_tile_buffer_bytes, pack_tile_buffer_count, pack_tile_cache_text, &
+        dependency_hash, has_dependency)
       if (has_dependency) return
     end if
 
@@ -984,7 +984,8 @@ contains
     end if
   end subroutine extract_text_pack_static_dependency_hash
 
-  subroutine build_weight_pack_buffer_dependency_hash(buffer_bytes, buffer_count, dependency_hash, has_dependency)
+  subroutine build_weight_pack_buffer_dependency_hash(buffer_bytes, buffer_count, cache_text, dependency_hash, &
+                                                      has_dependency)
     integer(i32), parameter    :: CUDA_PACK_BUFFER_MAGIC = int(z'42505A4D', kind=i32)
     integer(i32), parameter    :: CUDA_PACK_BUFFER_VERSION = 2_i32
     integer(i32), parameter    :: CUDA_PACK_BUFFER_HEADER_BYTES = 32_i32
@@ -992,6 +993,7 @@ contains
     integer(i32), parameter    :: CUDA_PACK_BUFFER_SOURCE_OFFSET_BYTES = 104_i32
     integer(i8), intent(in)    :: buffer_bytes(:)
     integer(i32), intent(in)   :: buffer_count
+    character(len=*), intent(in) :: cache_text
     integer(i64), intent(out)  :: dependency_hash
     logical, intent(out)       :: has_dependency
     integer(i32)               :: parsed_magic
@@ -1010,6 +1012,7 @@ contains
     integer(i64)               :: materialized_hash
     integer(i64)               :: materialized_dependency_hash
     logical                    :: all_entries_materialized
+    logical                    :: found_cache_materialized_hash
     logical                    :: read_ok
 
     dependency_hash = 0_i64
@@ -1067,8 +1070,16 @@ contains
       end if
       call read_buffer_i64(buffer_bytes, buffer_count, entry_offset + 88_i32, materialized_hash, read_ok)
       if (.not. read_ok .or. materialized_hash <= 0_i64) then
-        all_entries_materialized = .false.
-        exit
+        materialized_hash = 0_i64
+        found_cache_materialized_hash = .false.
+        if (len_trim(cache_text) > 0) then
+          call extract_weight_pack_tile_cache_materialized_hash(cache_text, pack_index, pack_offset, pack_bytes, &
+            materialized_hash, found_cache_materialized_hash)
+        end if
+        if (.not. found_cache_materialized_hash) then
+          all_entries_materialized = .false.
+          exit
+        end if
       end if
       source_offset = -1_i64
       if (parsed_entry_bytes >= CUDA_PACK_BUFFER_SOURCE_OFFSET_BYTES) then
@@ -1185,7 +1196,7 @@ contains
     dependency_hash = combine_positive_hash64(dependency_hash, pack_usage%last_pack_bytes)
     dependency_hash = combine_positive_hash64(dependency_hash, pack_usage%usage_hash)
 
-    do entry_index = 1_i32, min(MAX_CUDA_PACK_DISPATCH_ENTRIES, pack_usage%usage_count)
+    do entry_index = 1_i32, MAX_CUDA_PACK_DISPATCH_ENTRIES
       dependency_hash = combine_positive_hash64(dependency_hash, int(pack_usage%entry_pack_indices(entry_index), kind=i64))
       dependency_hash = combine_positive_hash64(dependency_hash, pack_usage%entry_offsets(entry_index))
       dependency_hash = combine_positive_hash64(dependency_hash, pack_usage%entry_bytes(entry_index))
@@ -2612,6 +2623,66 @@ contains
     applied_ok = .true.
   end subroutine hydrate_pack_dispatch_buffer_selection
 
+  subroutine extract_weight_pack_tile_cache_materialized_hash(cache_text, pack_index, pack_offset, pack_bytes, &
+                                                              materialized_hash, found_materialized_hash)
+    character(len=*), intent(in) :: cache_text
+    integer(i32), intent(in)     :: pack_index
+    integer(i64), intent(in)     :: pack_offset
+    integer(i64), intent(in)     :: pack_bytes
+    integer(i64), intent(out)    :: materialized_hash
+    logical, intent(out)         :: found_materialized_hash
+    character(len=64)            :: key_text
+    character(len=64)            :: value_text
+    integer(i32)                 :: candidate_pack_index
+    integer(i32)                 :: pack_count
+    integer(i64)                 :: parsed_i64
+    integer(i64)                 :: candidate_offset
+    integer(i64)                 :: candidate_bytes
+    logical                      :: found_count
+    logical                      :: found_offset
+    logical                      :: found_bytes
+    logical                      :: found_materialized
+
+    materialized_hash = 0_i64
+    found_materialized_hash = .false.
+    if (len_trim(cache_text) == 0) return
+
+    value_text = ""
+    call extract_payload_field_text(cache_text, "pack_count=", value_text, found_count)
+    if (.not. found_count) return
+    if (.not. parse_i64_text(value_text, parsed_i64)) return
+    pack_count = max(0_i32, int(parsed_i64, kind=i32))
+
+    do candidate_pack_index = 1_i32, pack_count
+      write(key_text, '("pack",I0,"_offset=")') candidate_pack_index
+      value_text = ""
+      call extract_payload_field_text(cache_text, trim(key_text), value_text, found_offset)
+      if (.not. found_offset) cycle
+      if (.not. parse_i64_text(value_text, candidate_offset)) cycle
+
+      write(key_text, '("pack",I0,"_bytes=")') candidate_pack_index
+      value_text = ""
+      call extract_payload_field_text(cache_text, trim(key_text), value_text, found_bytes)
+      if (.not. found_bytes) cycle
+      if (.not. parse_i64_text(value_text, candidate_bytes)) cycle
+
+      if (pack_index > 0_i32) then
+        if (candidate_pack_index /= pack_index) cycle
+      else if (candidate_offset /= pack_offset .or. candidate_bytes /= pack_bytes) then
+        cycle
+      end if
+
+      write(key_text, '("pack",I0,"_materialized_hash=")') candidate_pack_index
+      value_text = ""
+      call extract_payload_field_text(cache_text, trim(key_text), value_text, found_materialized)
+      if (.not. found_materialized) return
+      if (.not. parse_i64_text(value_text, parsed_i64)) return
+      materialized_hash = max(0_i64, parsed_i64)
+      found_materialized_hash = (materialized_hash > 0_i64)
+      return
+    end do
+  end subroutine extract_weight_pack_tile_cache_materialized_hash
+
   subroutine extract_weight_pack_tile_cache_record(cache_text, payload_text, buffer_bytes, buffer_count, buffer_loaded, &
                                                    pack_index, pack_offset, pack_bytes, resolved_pack_index, &
                                                    span_hash, span_bytes, &
@@ -2675,6 +2746,9 @@ contains
     integer(i32)                 :: tile_data_bytes
     integer(i32)                 :: candidate_word_count
     integer(i32)                 :: candidate_tile_byte_count
+    integer(i32)                 :: lookup_pack_index
+    integer(i64)                 :: lookup_pack_offset
+    integer(i64)                 :: lookup_pack_bytes
 
     resolved_pack_index = 0_i32
     span_hash = 0_i64
@@ -2698,7 +2772,19 @@ contains
         resolved_pack_index, span_hash, span_bytes, resolved_pack_offset, resolved_pack_bytes, resolved_role_code, &
         resolved_layout_code, page_hash, page_word_count, page_words, tile_hash, tile_byte_count, tile_bytes, &
         materialized_hash, found_materialized_hash, found_record)
-      if (found_record) return
+      if (found_record) then
+        if (.not. found_materialized_hash .and. len_trim(cache_text) > 0) then
+          lookup_pack_index = pack_index
+          if (resolved_pack_index > 0_i32) lookup_pack_index = resolved_pack_index
+          lookup_pack_offset = pack_offset
+          if (resolved_pack_offset > 0_i64) lookup_pack_offset = resolved_pack_offset
+          lookup_pack_bytes = pack_bytes
+          if (resolved_pack_bytes > 0_i64) lookup_pack_bytes = resolved_pack_bytes
+          call extract_weight_pack_tile_cache_materialized_hash(cache_text, lookup_pack_index, lookup_pack_offset, &
+            lookup_pack_bytes, materialized_hash, found_materialized_hash)
+        end if
+        return
+      end if
     end if
 
     value_text = ""

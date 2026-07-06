@@ -156,6 +156,20 @@ int main(void) {
     if (!expect_true("session-report short-struct failure should replace earlier error text",
                      strstr(error_buffer, "session report output struct_size is too small") != NULL)) return 1;
 
+    {
+        mizu_decode_options_t decode_options;
+
+        memset(&decode_options, 0, sizeof(decode_options));
+        decode_options.struct_size = sizeof(decode_options);
+        decode_options.token_budget = 1;
+
+        status = mizu_session_decode_step(session, &decode_options, NULL, NULL);
+        if (!expect_status("decode with null result pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode null-result failure should publish runtime error text",
+                         strstr(error_buffer, "decode result pointer is null") != NULL)) return 1;
+    }
+
     status = mizu_session_prefill(session, NULL);
     if (!expect_status("prefill without pending inputs", status, MIZU_STATUS_INVALID_STATE)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
@@ -309,6 +323,34 @@ int main(void) {
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
     if (!expect_true("missing output storage should replace earlier error text",
                      strstr(error_buffer, "session output storage pointer is null") != NULL)) return 1;
+
+    {
+        mizu_decode_options_t decode_options;
+        mizu_decode_result_t decode_result;
+
+        memset(&decode_options, 0, sizeof(decode_options));
+        decode_options.struct_size = sizeof(decode_options);
+        decode_options.token_budget = 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode with undersized token buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode undersized-buffer failure should publish runtime error text",
+                         strstr(error_buffer, "decode result token buffer is too small") != NULL)) return 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+        decode_result.token_capacity = 1;
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode with missing token storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode missing-storage failure should replace earlier error text",
+                         strstr(error_buffer, "decode result token storage pointer is null") != NULL)) return 1;
+    }
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

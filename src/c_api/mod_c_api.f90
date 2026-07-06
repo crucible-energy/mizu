@@ -1447,25 +1447,39 @@ contains
       return
     end if
 
-    if (.not. c_associated(options_ptr) .or. .not. c_associated(out_result_ptr)) then
+    if (.not. c_associated(options_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode options pointer is null")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_associated(out_result_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode result pointer is null")
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(options_ptr, options)
     call c_f_pointer(out_result_ptr, result)
-    if ((.not. associated(options)) .or. (.not. associated(result))) then
+    if (.not. associated(options)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode options pointer is invalid")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. associated(result)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode result pointer is invalid")
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_input_struct_size(options%struct_size, c_sizeof(options))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "decode options struct_size is too small")
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
     status_code = require_output_struct_size(result%struct_size, c_sizeof(result))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "decode result struct_size is too small")
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1484,6 +1498,7 @@ contains
     end if
 
     if (options%token_budget <= 0_c_int64_t) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode token budget must be positive")
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -1594,11 +1609,14 @@ contains
     result%result_flags = 0_c_int64_t
 
     if (result%token_capacity < int(emitted_token_count, kind=c_size_t)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_BUFFER_TOO_SMALL, "decode result token buffer is too small")
       mizu_session_decode_step = int(MIZU_STATUS_BUFFER_TOO_SMALL, kind=c_int32_t)
       return
     end if
 
     if (emitted_token_count > 0_i64 .and. .not. c_associated(result%token_buffer)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "decode result token storage pointer is null")
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if

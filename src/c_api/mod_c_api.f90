@@ -815,6 +815,7 @@ contains
     stage_started_us = monotonic_timestamp_us()
     call park_session_state(session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session park transition failed")
       mizu_session_park = int(status_code, kind=c_int32_t)
       return
     end if
@@ -911,6 +912,7 @@ contains
     end if
     call resume_session_state(session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_runtime_error(runtime, status_code, "session resume transition failed")
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1265,6 +1267,7 @@ contains
           projector_embedding_count, status_code, runtime%workspace%host_buffer, runtime%workspace%bytes_in_use)
         if (status_code /= MIZU_STATUS_OK) then
           call release_stage_workspace(runtime, projector_workspace_reserved)
+          call set_session_owner_runtime_error(session, status_code, "projector execution failed")
           mizu_session_prefill = int(status_code, kind=c_int32_t)
           return
         end if
@@ -1275,6 +1278,7 @@ contains
           runtime%workspace%bytes_in_use)
         if (status_code /= MIZU_STATUS_OK) then
           call release_stage_workspace(runtime, projector_workspace_reserved)
+          call set_session_owner_runtime_error(session, status_code, "projector execution failed")
           mizu_session_prefill = int(status_code, kind=c_int32_t)
           return
         end if
@@ -1350,6 +1354,7 @@ contains
       end if
       if (status_code /= MIZU_STATUS_OK) then
         call release_stage_workspace(runtime, prefill_workspace_reserved)
+        call set_session_owner_runtime_error(session, status_code, "prefill execution failed")
         mizu_session_prefill = int(status_code, kind=c_int32_t)
         return
       end if
@@ -1384,6 +1389,7 @@ contains
       end if
       if (status_code /= MIZU_STATUS_OK) then
         call release_stage_workspace(runtime, prefill_workspace_reserved)
+        call set_session_owner_runtime_error(session, status_code, "prefill execution failed")
         mizu_session_prefill = int(status_code, kind=c_int32_t)
         return
       end if
@@ -1393,6 +1399,7 @@ contains
       token_content_hash=staged_token_hash_before, modal_content_hash=staged_modal_hash_before, &
       projector_embedding_count=projector_embedding_count)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "prefill state update failed")
       mizu_session_prefill = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1616,6 +1623,7 @@ contains
         updated_context_byte_count, context_artifact_hash=decode_context_artifact_hash)
       if (status_code /= MIZU_STATUS_OK) then
         call release_stage_workspace(runtime, decode_workspace_reserved)
+        call set_session_owner_runtime_error(session, status_code, "decode execution failed")
         mizu_session_decode_step = int(status_code, kind=c_int32_t)
         return
       end if
@@ -1628,6 +1636,7 @@ contains
         updated_context_byte_count, context_artifact_hash=decode_context_artifact_hash)
       if (status_code /= MIZU_STATUS_OK) then
         call release_stage_workspace(runtime, decode_workspace_reserved)
+        call set_session_owner_runtime_error(session, status_code, "decode execution failed")
         mizu_session_decode_step = int(status_code, kind=c_int32_t)
         return
       end if
@@ -1660,6 +1669,7 @@ contains
     if (emitted_token_count > 0_i64) emitted_tokens_local(1) = int(token_value, kind=i32)
     call complete_decode(session, emitted_token_count, decode_stop_reason, status_code, emitted_tokens_local)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "decode state update failed")
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if

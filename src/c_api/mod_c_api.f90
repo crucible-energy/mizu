@@ -1001,6 +1001,13 @@ contains
       return
     end if
 
+    if (token_count > int(huge(0), kind=c_size_t)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                           "token count exceeds supported interop range")
+      mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
     call c_f_pointer(tokens_ptr, token_values, [int(token_count)])
     if (.not. associated(token_values)) then
       call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "token input pointer is invalid")
@@ -1064,6 +1071,13 @@ contains
         call set_session_owner_runtime_error(session, status_code, "modal input descriptor is invalid")
       end if
       mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    if (input%byte_count > int(huge(0), kind=c_size_t)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                           "modal input byte count exceeds supported interop range")
+      mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 

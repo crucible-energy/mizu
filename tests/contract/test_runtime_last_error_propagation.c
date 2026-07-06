@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,6 +264,12 @@ int main(void) {
     if (!expect_true("zero token count should replace earlier error text",
                      strstr(error_buffer, "token count must be positive") != NULL)) return 1;
 
+    status = mizu_session_attach_tokens(session, token_values, (size_t)INT_MAX + 1u, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens with oversized count", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("oversized token count should replace earlier error text",
+                     strstr(error_buffer, "token count exceeds supported interop range") != NULL)) return 1;
+
     memset(&modal_input, 0, sizeof(modal_input));
     modal_input.struct_size = sizeof(modal_input);
     modal_input.slot_name_z = "image";
@@ -290,6 +297,14 @@ int main(void) {
                      strstr(error_buffer, "modal input data pointer is null") != NULL)) return 1;
 
     modal_input.data = image_bytes;
+    modal_input.byte_count = (size_t)INT_MAX + 1u;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input with oversized byte count", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("oversized modal byte count should replace earlier error text",
+                     strstr(error_buffer, "modal input byte count exceeds supported interop range") != NULL)) return 1;
+
+    modal_input.byte_count = sizeof(image_bytes);
 
     memset(prefill_reports, 0, sizeof(prefill_reports));
     memset(&prefill_buffer, 0, sizeof(prefill_buffer));

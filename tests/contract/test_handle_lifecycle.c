@@ -3,12 +3,21 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "mizu.h"
 
 static int expect_status(const char *label, mizu_status_code_t actual, mizu_status_code_t expected) {
     if (actual != expected) {
         fprintf(stderr, "%s: expected status %d, got %d\n", label, (int)expected, (int)actual);
+        return 0;
+    }
+    return 1;
+}
+
+static int expect_true(const char *label, int condition) {
+    if (!condition) {
+        fprintf(stderr, "%s\n", label);
         return 0;
     }
     return 1;
@@ -29,6 +38,9 @@ int main(void) {
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
     mizu_model_info_t model_info_reuse;
+    mizu_execution_report_t session_report;
+    mizu_execution_report_t model_report;
+    char error_buffer[16] = "keep";
     size_t required_bytes = 0;
 
     status = mizu_session_close(NULL);
@@ -93,12 +105,18 @@ int main(void) {
     if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
 
     session_info.struct_size = sizeof(session_info);
+    memset(&session_report, 0, sizeof(session_report));
+    session_report.struct_size = sizeof(session_report);
+    session_report.stage_kind = 123;
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_open(model, &session_config, &session_reuse);
     if (!expect_status("session reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("closed session get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_status("closed session report", mizu_session_get_last_report(session, &session_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session report should leave caller output untouched",
+                     session_report.stage_kind == 123 && session_report.struct_size == sizeof(session_report))) return 1;
     status = mizu_session_close(session);
     if (!expect_status("double session close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     session_info_reuse.struct_size = sizeof(session_info_reuse);
@@ -108,12 +126,18 @@ int main(void) {
     if (!expect_status("reopened session close", status, MIZU_STATUS_OK)) return 1;
 
     model_info.struct_size = sizeof(model_info);
+    memset(&model_report, 0, sizeof(model_report));
+    model_report.struct_size = sizeof(model_report);
+    model_report.stage_kind = 321;
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_open(runtime, &model_config, &model_reuse);
     if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("closed model get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_status("closed model report", mizu_model_get_last_report(model, &model_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed model report should leave caller output untouched",
+                     model_report.stage_kind == 321 && model_report.struct_size == sizeof(model_report))) return 1;
     status = mizu_model_close(model);
     if (!expect_status("double model close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     model_info_reuse.struct_size = sizeof(model_info_reuse);
@@ -128,6 +152,12 @@ int main(void) {
     if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);
     if (!expect_status("destroyed runtime copy last error", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    required_bytes = 77;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("destroyed runtime copy last error with outputs", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("destroyed runtime copy last error should preserve required-bytes output", required_bytes == 77)) return 1;
+    if (!expect_true("destroyed runtime copy last error should preserve error buffer contents",
+                     strcmp(error_buffer, "keep") == 0)) return 1;
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("double runtime destroy", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_runtime_destroy(runtime_reuse);

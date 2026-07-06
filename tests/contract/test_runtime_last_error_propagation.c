@@ -258,6 +258,12 @@ int main(void) {
     if (!expect_true("null token pointer should publish runtime error text",
                      strstr(error_buffer, "token input pointer is null") != NULL)) return 1;
 
+    status = mizu_session_attach_tokens(session, (const int32_t *)(uintptr_t)1, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens with misaligned pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("misaligned token pointer should replace earlier error text",
+                     strstr(error_buffer, "token input pointer is misaligned") != NULL)) return 1;
+
     status = mizu_session_attach_tokens(session, token_values, 0, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens with zero count", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
@@ -282,6 +288,12 @@ int main(void) {
     modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
     modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
 
+    status = mizu_session_attach_modal_input(session, (const mizu_modal_input_desc_t *)(uintptr_t)1);
+    if (!expect_status("attach modal input with misaligned descriptor", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("misaligned modal descriptor should publish runtime error text",
+                     strstr(error_buffer, "modal input descriptor pointer is misaligned") != NULL)) return 1;
+
     status = mizu_session_attach_modal_input(session, &modal_input);
     if (!expect_status("attach modal input with unsupported storage", status, MIZU_STATUS_UNSUPPORTED_MODALITY)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
@@ -305,6 +317,12 @@ int main(void) {
                      strstr(error_buffer, "modal input byte count exceeds supported interop range") != NULL)) return 1;
 
     modal_input.byte_count = sizeof(image_bytes);
+
+    status = mizu_session_prefill(session, (mizu_report_buffer_t *)(uintptr_t)1);
+    if (!expect_status("prefill with misaligned report buffer pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("misaligned report buffer pointer should publish runtime error text",
+                     strstr(error_buffer, "session report buffer pointer is misaligned") != NULL)) return 1;
 
     memset(prefill_reports, 0, sizeof(prefill_reports));
     memset(&prefill_buffer, 0, sizeof(prefill_buffer));
@@ -431,6 +449,17 @@ int main(void) {
     if (!expect_true("missing output storage should replace earlier error text",
                      strstr(error_buffer, "session output storage pointer is null") != NULL)) return 1;
 
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.byte_capacity = sizeof(int32_t);
+    output_buffer.data = (void *)(uintptr_t)1;
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output with misaligned storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("misaligned output storage should replace earlier error text",
+                     strstr(error_buffer, "session output storage pointer is misaligned") != NULL)) return 1;
+
     {
         mizu_decode_options_t decode_options;
         mizu_decode_result_t decode_result;
@@ -457,6 +486,17 @@ int main(void) {
         if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
         if (!expect_true("decode missing-storage failure should replace earlier error text",
                          strstr(error_buffer, "decode result token storage pointer is null") != NULL)) return 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+        decode_result.token_buffer = (int32_t *)(uintptr_t)1;
+        decode_result.token_capacity = 1;
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode with misaligned token storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("misaligned decode storage should replace earlier error text",
+                         strstr(error_buffer, "decode result token storage pointer is misaligned") != NULL)) return 1;
     }
 
     status = mizu_session_close(session);

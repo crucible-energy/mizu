@@ -1,6 +1,6 @@
 module mod_c_api
   use iso_c_binding, only: c_ptr, c_null_ptr, c_associated, c_f_pointer, c_loc, &
-                           c_size_t, c_int32_t, c_int64_t, c_char, c_float, &
+                           c_size_t, c_int32_t, c_int64_t, c_intptr_t, c_char, c_float, &
                            c_null_char, c_sizeof
   use mod_kinds,     only: i8, i32, i64, c_i8, r32, MAX_NAME_LEN, MAX_PATH_LEN
   use mod_status,    only: MIZU_STATUS_OK, MIZU_STATUS_END_OF_SEQUENCE, &
@@ -284,6 +284,10 @@ contains
       mizu_runtime_create = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(config_ptr, c_struct_pointer_alignment_bytes())) then
+      mizu_runtime_create = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(config_ptr, c_config)
     if (.not. associated(c_config)) then
@@ -435,6 +439,11 @@ contains
       mizu_model_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(config_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_runtime_error(runtime, MIZU_STATUS_INVALID_ARGUMENT, "model config pointer is misaligned")
+      mizu_model_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(config_ptr, c_config)
     if (.not. associated(c_config)) then
@@ -576,6 +585,11 @@ contains
       mizu_model_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(out_info_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model info output pointer is misaligned")
+      mizu_model_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(out_info_ptr, c_info)
     if (.not. associated(c_info)) then
@@ -617,6 +631,11 @@ contains
 
     if (.not. c_associated(out_report_ptr)) then
       call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model report output pointer is null")
+      mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(out_report_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model report output pointer is misaligned")
       mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -662,6 +681,11 @@ contains
 
     if (.not. c_associated(config_ptr)) then
       call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "session config pointer is null")
+      mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(config_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "session config pointer is misaligned")
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -950,6 +974,11 @@ contains
       mizu_session_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(out_info_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "session info output pointer is misaligned")
+      mizu_session_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(out_info_ptr, c_info)
     if (.not. associated(c_info)) then
@@ -1003,9 +1032,20 @@ contains
       return
     end if
 
+    if (token_count == 0_c_size_t) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "token count must be positive")
+      mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
     if (token_count > int(huge(0), kind=c_size_t)) then
       call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
                                            "token count exceeds supported interop range")
+      mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(tokens_ptr, c_i32_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "token input pointer is misaligned")
       mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -1045,6 +1085,12 @@ contains
     if (.not. c_associated(input_ptr)) then
       call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
                                            "modal input descriptor pointer is null")
+      mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(input_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                           "modal input descriptor pointer is misaligned")
       mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -1499,6 +1545,16 @@ contains
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(options_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode options pointer is misaligned")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(out_result_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "decode result pointer is misaligned")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(options_ptr, options)
     call c_f_pointer(out_result_ptr, result)
@@ -1665,6 +1721,13 @@ contains
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (emitted_token_count > 0_i64 .and. &
+        .not. c_pointer_is_aligned(result%token_buffer, c_i32_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "decode result token storage pointer is misaligned")
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     if (emitted_token_count > 0_i64) emitted_tokens_local(1) = int(token_value, kind=i32)
     call complete_decode(session, emitted_token_count, decode_stop_reason, status_code, emitted_tokens_local)
@@ -1727,6 +1790,12 @@ contains
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (.not. c_pointer_is_aligned(out_output_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session output buffer pointer is misaligned")
+      mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     call c_f_pointer(out_output_ptr, output)
     if (.not. associated(output)) then
@@ -1772,6 +1841,12 @@ contains
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
+    if (bytes_required > 0_i64 .and. .not. c_pointer_is_aligned(output%data, c_i32_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session output storage pointer is misaligned")
+      mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     if (session%last_output_token_count > 0_i64) then
       call c_f_pointer(output%data, token_buffer, [int(session%last_output_token_count)])
@@ -1800,6 +1875,12 @@ contains
     if (.not. c_associated(out_report_ptr)) then
       call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
         "session report output pointer is null")
+      mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+    if (.not. c_pointer_is_aligned(out_report_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session report output pointer is misaligned")
       mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -2326,6 +2407,10 @@ contains
     integer(i32)                    :: size_status
 
     if (status_code == MIZU_STATUS_BUFFER_TOO_SMALL) then
+      if (.not. c_pointer_is_aligned(report_buffer_ptr, c_struct_pointer_alignment_bytes())) then
+        call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "session report buffer pointer is misaligned")
+        return
+      end if
       call c_f_pointer(report_buffer_ptr, report_buffer)
       if (associated(report_buffer)) then
         size_status = require_output_struct_size(report_buffer%struct_size, c_sizeof(report_buffer))
@@ -2342,11 +2427,17 @@ contains
 
     if (status_code /= MIZU_STATUS_INVALID_ARGUMENT) return
 
+    if (.not. c_pointer_is_aligned(report_buffer_ptr, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, status_code, "session report buffer pointer is misaligned")
+      return
+    end if
     call c_f_pointer(report_buffer_ptr, report_buffer)
     if (.not. associated(report_buffer)) then
       call set_session_owner_runtime_error(session, status_code, "session report buffer pointer is invalid")
     else if (.not. c_associated(report_buffer%reports)) then
       call set_session_owner_runtime_error(session, status_code, "session report storage pointer is null")
+    else if (.not. c_pointer_is_aligned(report_buffer%reports, c_struct_pointer_alignment_bytes())) then
+      call set_session_owner_runtime_error(session, status_code, "session report storage pointer is misaligned")
     else
       call set_session_owner_runtime_error(session, status_code, "session report buffer is invalid")
     end if
@@ -6639,6 +6730,7 @@ contains
     integer(c_size_t), pointer :: out_size
 
     if (.not. c_associated(size_ptr)) return
+    if (.not. c_pointer_is_aligned(size_ptr, c_size_t_pointer_alignment_bytes())) return
     call c_f_pointer(size_ptr, out_size)
     if (associated(out_size)) then
       out_size = int(max(0_i64, value), kind=c_size_t)
@@ -6785,6 +6877,10 @@ contains
 
     status_code = MIZU_STATUS_OK
     if (.not. c_associated(report_buffer_ptr)) return
+    if (.not. c_pointer_is_aligned(report_buffer_ptr, c_struct_pointer_alignment_bytes())) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
 
     call c_f_pointer(report_buffer_ptr, report_buffer)
     if (.not. associated(report_buffer)) then
@@ -6799,6 +6895,9 @@ contains
     if (report_buffer%report_capacity < int(required_count, kind=c_size_t)) then
       status_code = MIZU_STATUS_BUFFER_TOO_SMALL
     else if (required_count > 0_i64 .and. .not. c_associated(report_buffer%reports)) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+    else if (required_count > 0_i64 .and. &
+             .not. c_pointer_is_aligned(report_buffer%reports, c_struct_pointer_alignment_bytes())) then
       status_code = MIZU_STATUS_INVALID_ARGUMENT
     end if
   end function prepare_report_buffer
@@ -6830,10 +6929,12 @@ contains
     integer                            :: report_count
 
     if (.not. c_associated(report_buffer_ptr)) return
+    if (.not. c_pointer_is_aligned(report_buffer_ptr, c_struct_pointer_alignment_bytes())) return
 
     call c_f_pointer(report_buffer_ptr, report_buffer)
     if (.not. associated(report_buffer)) return
     if (.not. c_associated(report_buffer%reports)) return
+    if (.not. c_pointer_is_aligned(report_buffer%reports, c_struct_pointer_alignment_bytes())) return
 
     report_count = int(report_buffer%report_count)
     call c_f_pointer(report_buffer%reports, reports, [report_count])
@@ -6846,5 +6947,56 @@ contains
       call copy_internal_report_to_c(primary_report, reports(1))
     end if
   end subroutine fill_report_buffer
+
+  logical function c_pointer_is_aligned(ptr, alignment_bytes) result(is_aligned)
+    type(c_ptr), value   :: ptr
+    integer(i64), intent(in) :: alignment_bytes
+    integer(c_intptr_t)  :: address_value
+
+    if (.not. c_associated(ptr) .or. alignment_bytes <= 0_i64) then
+      is_aligned = .false.
+      return
+    end if
+
+    if (alignment_bytes == 1_i64) then
+      is_aligned = .true.
+      return
+    end if
+
+    address_value = transfer(ptr, address_value)
+    is_aligned = iand(address_value, int(alignment_bytes - 1_i64, kind=c_intptr_t)) == 0_c_intptr_t
+  end function c_pointer_is_aligned
+
+  integer(i64) function c_struct_pointer_alignment_bytes() result(alignment_bytes)
+    type, bind(c) :: c_size_t_wrapper
+      character(kind=c_char) :: padding
+      integer(c_size_t)      :: value
+    end type c_size_t_wrapper
+    type(c_size_t_wrapper), target :: wrapper
+    integer(c_intptr_t)            :: base_address
+    integer(c_intptr_t)            :: value_address
+
+    base_address = transfer(c_loc(wrapper), base_address)
+    value_address = transfer(c_loc(wrapper%value), value_address)
+    alignment_bytes = max(1_i64, int(value_address - base_address, kind=i64))
+  end function c_struct_pointer_alignment_bytes
+
+  integer(i64) function c_size_t_pointer_alignment_bytes() result(alignment_bytes)
+    alignment_bytes = c_struct_pointer_alignment_bytes()
+  end function c_size_t_pointer_alignment_bytes
+
+  integer(i64) function c_i32_pointer_alignment_bytes() result(alignment_bytes)
+    type, bind(c) :: c_i32_wrapper
+      character(kind=c_char) :: padding
+      integer(c_int32_t)     :: value
+    end type c_i32_wrapper
+    type(c_i32_wrapper), target :: wrapper
+    integer(c_intptr_t)         :: base_address
+    integer(c_intptr_t)         :: value_address
+
+    base_address = transfer(c_loc(wrapper), base_address)
+    value_address = transfer(c_loc(wrapper%value), value_address)
+    alignment_bytes = max(1_i64, int(value_address - base_address, kind=i64))
+  end function c_i32_pointer_alignment_bytes
 
 end module mod_c_api

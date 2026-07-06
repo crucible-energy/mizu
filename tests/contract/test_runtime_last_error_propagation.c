@@ -52,6 +52,7 @@ int main(void) {
     mizu_modal_input_desc_t modal_input;
     mizu_output_buffer_t output_buffer;
     mizu_execution_report_t model_report;
+    mizu_execution_report_t session_report;
     mizu_execution_report_t resume_reports[1];
     mizu_report_buffer_t resume_buffer;
 
@@ -96,6 +97,20 @@ int main(void) {
     if (!expect_true("model report after open should be model load",
                      model_report.stage_kind == MIZU_STAGE_MODEL_LOAD)) return 1;
 
+    status = mizu_model_get_info(model, NULL);
+    if (!expect_status("model info with null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("model-info null-output failure should publish runtime error text",
+                     strstr(error_buffer, "model info output pointer is null") != NULL)) return 1;
+
+    memset(&model_report, 0, sizeof(model_report));
+    model_report.struct_size = sizeof(model_report) - 1;
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("model report with short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("model-report short-struct failure should replace earlier error text",
+                     strstr(error_buffer, "model report output struct_size is too small") != NULL)) return 1;
+
     memset(&session_config, 0, sizeof(session_config));
     session_config.struct_size = sizeof(session_config);
     session_config.abi_version = mizu_get_abi_version();
@@ -126,6 +141,20 @@ int main(void) {
 
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_get_info(session, NULL);
+    if (!expect_status("session info with null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-info null-output failure should publish runtime error text",
+                     strstr(error_buffer, "session info output pointer is null") != NULL)) return 1;
+
+    memset(&session_report, 0, sizeof(session_report));
+    session_report.struct_size = sizeof(session_report) - 1;
+    status = mizu_session_get_last_report(session, &session_report);
+    if (!expect_status("session report with short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-report short-struct failure should replace earlier error text",
+                     strstr(error_buffer, "session report output struct_size is too small") != NULL)) return 1;
 
     status = mizu_session_prefill(session, NULL);
     if (!expect_status("prefill without pending inputs", status, MIZU_STATUS_INVALID_STATE)) return 1;

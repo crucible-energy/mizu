@@ -572,18 +572,21 @@ contains
     end if
 
     if (.not. c_associated(out_info_ptr)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model info output pointer is null")
       mizu_model_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(out_info_ptr, c_info)
     if (.not. associated(c_info)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model info output pointer is invalid")
       mizu_model_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_model_owner_runtime_error(model, status_code, "model info output struct_size is too small")
       mizu_model_get_info = int(status_code, kind=c_int32_t)
       return
     end if
@@ -613,18 +616,21 @@ contains
     end if
 
     if (.not. c_associated(out_report_ptr)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model report output pointer is null")
       mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(out_report_ptr, c_report)
     if (.not. associated(c_report)) then
+      call set_model_owner_runtime_error(model, MIZU_STATUS_INVALID_ARGUMENT, "model report output pointer is invalid")
       mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_model_owner_runtime_error(model, status_code, "model report output struct_size is too small")
       mizu_model_get_last_report = int(status_code, kind=c_int32_t)
       return
     end if
@@ -936,18 +942,21 @@ contains
     end if
 
     if (.not. c_associated(out_info_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "session info output pointer is null")
       mizu_session_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(out_info_ptr, c_info)
     if (.not. associated(c_info)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "session info output pointer is invalid")
       mizu_session_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session info output struct_size is too small")
       mizu_session_get_info = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1715,18 +1724,23 @@ contains
     end if
 
     if (.not. c_associated(out_report_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session report output pointer is null")
       mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(out_report_ptr, c_report)
     if (.not. associated(c_report)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session report output pointer is invalid")
       mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session report output struct_size is too small")
       mizu_session_get_last_report = int(status_code, kind=c_int32_t)
       return
     end if

@@ -93,6 +93,12 @@ int main(void) {
     model_config.allowed_backend_mask = MIZU_BACKEND_MASK_APPLE_ANE;
     model_config.model_flags = MIZU_MODEL_FLAG_NONE;
 
+    status = mizu_model_open(runtime, (const mizu_model_open_config_t *)(uintptr_t)1, &model);
+    if (!expect_status("model open with misaligned config", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("model-open misaligned-config failure should publish runtime error text",
+                     strstr(error_buffer, "model config pointer is misaligned") != NULL)) return 1;
+
     status = mizu_model_open(runtime, &model_config, &model);
     if (!expect_status("model open", status, MIZU_STATUS_OK)) return 1;
     memset(&model_report, 0, sizeof(model_report));
@@ -108,6 +114,12 @@ int main(void) {
     if (!expect_true("model-info null-output failure should publish runtime error text",
                      strstr(error_buffer, "model info output pointer is null") != NULL)) return 1;
 
+    status = mizu_model_get_info(model, (mizu_model_info_t *)(uintptr_t)1);
+    if (!expect_status("model info with misaligned output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("model-info misaligned-output failure should replace earlier error text",
+                     strstr(error_buffer, "model info output pointer is misaligned") != NULL)) return 1;
+
     memset(&model_report, 0, sizeof(model_report));
     model_report.struct_size = sizeof(model_report) - 1;
     status = mizu_model_get_last_report(model, &model_report);
@@ -116,6 +128,12 @@ int main(void) {
     if (!expect_true("model-report short-struct failure should replace earlier error text",
                      strstr(error_buffer, "model report output struct_size is too small") != NULL)) return 1;
 
+    status = mizu_model_get_last_report(model, (mizu_execution_report_t *)(uintptr_t)1);
+    if (!expect_status("model report with misaligned output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("model-report misaligned-output failure should replace earlier error text",
+                     strstr(error_buffer, "model report output pointer is misaligned") != NULL)) return 1;
+
     memset(&session_config, 0, sizeof(session_config));
     session_config.struct_size = sizeof(session_config);
     session_config.abi_version = mizu_get_abi_version();
@@ -123,6 +141,12 @@ int main(void) {
     session_config.max_decode_tokens = 128;
     session_config.sampler_kind = MIZU_SAMPLER_KIND_GREEDY;
     session_config.session_flags = MIZU_SESSION_FLAG_NONE;
+
+    status = mizu_session_open(model, (const mizu_session_config_t *)(uintptr_t)1, &session);
+    if (!expect_status("session open with misaligned config", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-open misaligned-config failure should publish runtime error text",
+                     strstr(error_buffer, "session config pointer is misaligned") != NULL)) return 1;
 
     status = mizu_session_open(model, NULL, &session);
     if (!expect_status("session open with null config", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
@@ -153,6 +177,12 @@ int main(void) {
     if (!expect_true("session-info null-output failure should publish runtime error text",
                      strstr(error_buffer, "session info output pointer is null") != NULL)) return 1;
 
+    status = mizu_session_get_info(session, (mizu_session_info_t *)(uintptr_t)1);
+    if (!expect_status("session info with misaligned output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-info misaligned-output failure should replace earlier error text",
+                     strstr(error_buffer, "session info output pointer is misaligned") != NULL)) return 1;
+
     memset(&session_report, 0, sizeof(session_report));
     session_report.struct_size = sizeof(session_report) - 1;
     status = mizu_session_get_last_report(session, &session_report);
@@ -161,12 +191,34 @@ int main(void) {
     if (!expect_true("session-report short-struct failure should replace earlier error text",
                      strstr(error_buffer, "session report output struct_size is too small") != NULL)) return 1;
 
+    status = mizu_session_get_last_report(session, (mizu_execution_report_t *)(uintptr_t)1);
+    if (!expect_status("session report with misaligned output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("session-report misaligned-output failure should replace earlier error text",
+                     strstr(error_buffer, "session report output pointer is misaligned") != NULL)) return 1;
+
     {
         mizu_decode_options_t decode_options;
+        mizu_decode_result_t decode_result;
 
         memset(&decode_options, 0, sizeof(decode_options));
         decode_options.struct_size = sizeof(decode_options);
         decode_options.token_budget = 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+
+        status = mizu_session_decode_step(session, (const mizu_decode_options_t *)(uintptr_t)1, &decode_result, NULL);
+        if (!expect_status("decode with misaligned options pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode misaligned-options failure should publish runtime error text",
+                         strstr(error_buffer, "decode options pointer is misaligned") != NULL)) return 1;
+
+        status = mizu_session_decode_step(session, &decode_options, (mizu_decode_result_t *)(uintptr_t)1, NULL);
+        if (!expect_status("decode with misaligned result pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode misaligned-result failure should replace earlier error text",
+                         strstr(error_buffer, "decode result pointer is misaligned") != NULL)) return 1;
 
         status = mizu_session_decode_step(session, &decode_options, NULL, NULL);
         if (!expect_status("decode with null result pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
@@ -226,6 +278,12 @@ int main(void) {
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    status = mizu_session_read_output(session, (mizu_output_buffer_t *)(uintptr_t)1);
+    if (!expect_status("read output with misaligned buffer pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("misaligned output-buffer pointer should publish runtime error text",
+                     strstr(error_buffer, "session output buffer pointer is misaligned") != NULL)) return 1;
+
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("read output before decode", status, MIZU_STATUS_INVALID_STATE)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
@@ -343,6 +401,16 @@ int main(void) {
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
     if (!expect_true("prefill missing-report-storage failure should replace earlier error text",
                      strstr(error_buffer, "session report storage pointer is null") != NULL)) return 1;
+
+    memset(&prefill_buffer, 0, sizeof(prefill_buffer));
+    prefill_buffer.struct_size = sizeof(prefill_buffer);
+    prefill_buffer.reports = (mizu_execution_report_t *)(uintptr_t)1;
+    prefill_buffer.report_capacity = 1;
+    status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill with misaligned report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("prefill misaligned-report-storage failure should replace earlier error text",
+                     strstr(error_buffer, "session report storage pointer is misaligned") != NULL)) return 1;
 
     status = mizu_session_prefill(session, NULL);
     if (!expect_status("prefill before parked-state setup", status, MIZU_STATUS_OK)) return 1;

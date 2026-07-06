@@ -104,7 +104,12 @@ int main(void) {
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
 
+    memset(&session_info, 0, sizeof(session_info));
     session_info.struct_size = sizeof(session_info);
+    session_info.session_state_flags = 444;
+    session_info.kv_token_count = 555;
+    session_info.staged_token_count = 666;
+    session_info.staged_modal_count = 777;
     memset(&session_report, 0, sizeof(session_report));
     session_report.struct_size = sizeof(session_report);
     session_report.stage_kind = 123;
@@ -114,6 +119,12 @@ int main(void) {
     if (!expect_status("session reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("closed session get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session info should leave caller output untouched",
+                     session_info.struct_size == sizeof(session_info) &&
+                     session_info.session_state_flags == 444 &&
+                     session_info.kv_token_count == 555 &&
+                     session_info.staged_token_count == 666 &&
+                     session_info.staged_modal_count == 777)) return 1;
     if (!expect_status("closed session report", mizu_session_get_last_report(session, &session_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!expect_true("closed session report should leave caller output untouched",
                      session_report.stage_kind == 123 && session_report.struct_size == sizeof(session_report))) return 1;
@@ -125,7 +136,11 @@ int main(void) {
     status = mizu_session_close(session_reuse);
     if (!expect_status("reopened session close", status, MIZU_STATUS_OK)) return 1;
 
+    memset(&model_info, 0, sizeof(model_info));
     model_info.struct_size = sizeof(model_info);
+    model_info.allowed_backend_mask = 888;
+    model_info.model_features = 999;
+    model_info.projector_slot_count = 111;
     memset(&model_report, 0, sizeof(model_report));
     model_report.struct_size = sizeof(model_report);
     model_report.stage_kind = 321;
@@ -135,6 +150,11 @@ int main(void) {
     if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("closed model get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed model info should leave caller output untouched",
+                     model_info.struct_size == sizeof(model_info) &&
+                     model_info.allowed_backend_mask == 888 &&
+                     model_info.model_features == 999 &&
+                     model_info.projector_slot_count == 111)) return 1;
     if (!expect_status("closed model report", mizu_model_get_last_report(model, &model_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!expect_true("closed model report should leave caller output untouched",
                      model_report.stage_kind == 321 && model_report.struct_size == sizeof(model_report))) return 1;

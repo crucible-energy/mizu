@@ -39,6 +39,7 @@ int main(void) {
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
     mizu_model_info_t model_info_reuse;
+    mizu_modal_input_desc_t modal_input;
     mizu_decode_options_t decode_options;
     mizu_decode_result_t decode_result;
     mizu_output_buffer_t output_buffer;
@@ -46,7 +47,9 @@ int main(void) {
     mizu_execution_report_t model_report;
     mizu_execution_report_t report_storage[1];
     mizu_report_buffer_t report_buffer;
+    int32_t staged_tokens[3] = {11, 22, 33};
     int32_t decode_token = 4321;
+    uint8_t image_bytes[4] = {1, 2, 3, 4};
     char error_buffer[16] = "keep";
     size_t required_bytes = 0;
     mizu_model_t *stale_model_after_runtime_destroy = (mizu_model_t *)(uintptr_t)0x1;
@@ -136,6 +139,26 @@ int main(void) {
     if (!expect_status("closed session report", mizu_session_get_last_report(session, &session_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!expect_true("closed session report should leave caller output untouched",
                      session_report.stage_kind == 123 && session_report.struct_size == sizeof(session_report))) return 1;
+    if (!expect_status("closed session attach tokens",
+                       mizu_session_attach_tokens(session, staged_tokens, 3, MIZU_ATTACH_FLAG_NONE),
+                       MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    memset(&modal_input, 0, sizeof(modal_input));
+    modal_input.struct_size = sizeof(modal_input);
+    modal_input.slot_name_z = "image";
+    modal_input.placeholder_ordinal = 1;
+    modal_input.modality_kind = MIZU_MODALITY_KIND_IMAGE;
+    modal_input.storage_kind = MIZU_STORAGE_KIND_ENCODED_BYTES;
+    modal_input.dtype = MIZU_DTYPE_U8;
+    modal_input.data = image_bytes;
+    modal_input.byte_count = sizeof(image_bytes);
+    modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
+    modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
+    if (!expect_status("closed session attach modal input",
+                       mizu_session_attach_modal_input(session, &modal_input),
+                       MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_status("closed session clear pending inputs",
+                       mizu_session_clear_pending_inputs(session),
+                       MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     memset(&report_buffer, 0, sizeof(report_buffer));
     report_buffer.struct_size = sizeof(report_buffer);

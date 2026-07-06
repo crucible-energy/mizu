@@ -30,6 +30,7 @@ int main(void) {
     mizu_model_t *model_reuse = NULL;
     mizu_session_t *session = NULL;
     mizu_session_t *session_reuse = NULL;
+    mizu_session_t *stale_session_after_model_close = (mizu_session_t *)(uintptr_t)0x2;
     mizu_status_code_t status;
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
@@ -48,6 +49,7 @@ int main(void) {
     int32_t decode_token = 4321;
     char error_buffer[16] = "keep";
     size_t required_bytes = 0;
+    mizu_model_t *stale_model_after_runtime_destroy = (mizu_model_t *)(uintptr_t)0x1;
 
     status = mizu_session_close(NULL);
     if (!expect_status("null session close should be a no-op", status, MIZU_STATUS_OK)) return 1;
@@ -210,6 +212,10 @@ int main(void) {
     model_report.stage_kind = 321;
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_open(model, &session_config, &stale_session_after_model_close);
+    if (!expect_status("closed model session open", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed model session open should clear caller output",
+                     stale_session_after_model_close == NULL)) return 1;
     status = mizu_model_open(runtime, &model_config, &model_reuse);
     if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_get_info(model, &model_info);
@@ -232,6 +238,10 @@ int main(void) {
 
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_open(runtime, &model_config, &stale_model_after_runtime_destroy);
+    if (!expect_status("destroyed runtime model open", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("destroyed runtime model open should clear caller output",
+                     stale_model_after_runtime_destroy == NULL)) return 1;
     status = mizu_runtime_create(&runtime_config, &runtime_reuse);
     if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);

@@ -225,11 +225,13 @@ at `/Users/sam/git/crucible/mizu`.
   - pre-commit runs `./scripts/format-local.sh --staged --write --restage`
     and `git diff --cached --check`
   - pre-push runs `bash scripts/mizu-pre-push-check.sh`
+  - pre-push always runs the default local gate and automatically escalates to
+    `make check-debug` when the pushed range touches memory-sensitive runtime,
+    bridge, cache, or related build surfaces
   - before claiming a branch is ready, ensure those same checks pass when run
     directly via `make format-check`, `git diff --check`, and `make test`
-  - `make check-debug` is not part of the default pre-push gate because it is
-    intentionally a heavier targeted safety pass, but it should be used for
-    bridge and lifetime-sensitive changes
+  - `make check-debug` remains available as a direct manual command when you
+    want the heavier safety pass before the hook would require it
 - After useful validated work on a feature branch, push the branch promptly so
   remote state stays aligned with local progress. Default to publishing each
   validated useful change rather than batching unrelated work locally.

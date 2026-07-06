@@ -244,12 +244,24 @@ int main(void) {
         memset(&decode_result, 0, sizeof(decode_result));
         decode_result.struct_size = sizeof(decode_result);
 
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, (mizu_report_buffer_t *)(uintptr_t)1);
+        if (!expect_status("decode with misaligned report buffer pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode misaligned-report-buffer failure should publish runtime error text",
+                         strstr(error_buffer, "session report buffer pointer is misaligned") != NULL)) return 1;
+
         status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
         if (!expect_status("decode without live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
         if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
         if (!expect_true("decode failure should replace prefill error text",
                          strstr(error_buffer, "session cannot decode in current state") != NULL)) return 1;
     }
+
+    status = mizu_session_park(session, (mizu_report_buffer_t *)(uintptr_t)1);
+    if (!expect_status("park with misaligned report buffer pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("park misaligned-report-buffer failure should replace earlier error text",
+                     strstr(error_buffer, "session report buffer pointer is misaligned") != NULL)) return 1;
 
     status = mizu_session_park(session, NULL);
     if (!expect_status("park without live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
@@ -295,6 +307,12 @@ int main(void) {
     resume_buffer.struct_size = sizeof(resume_buffer);
     resume_buffer.reports = resume_reports;
     resume_buffer.report_capacity = 1;
+
+    status = mizu_session_resume(session, (mizu_report_buffer_t *)(uintptr_t)1);
+    if (!expect_status("resume with misaligned report buffer pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("resume misaligned-report-buffer failure should replace earlier error text",
+                     strstr(error_buffer, "session report buffer pointer is misaligned") != NULL)) return 1;
 
     status = mizu_session_resume(session, &resume_buffer);
     if (!expect_status("resume before park", status, MIZU_STATUS_INVALID_STATE)) return 1;

@@ -38,8 +38,14 @@ int main(void) {
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
     mizu_model_info_t model_info_reuse;
+    mizu_decode_options_t decode_options;
+    mizu_decode_result_t decode_result;
+    mizu_output_buffer_t output_buffer;
     mizu_execution_report_t session_report;
     mizu_execution_report_t model_report;
+    mizu_execution_report_t report_storage[1];
+    mizu_report_buffer_t report_buffer;
+    int32_t decode_token = 4321;
     char error_buffer[16] = "keep";
     size_t required_bytes = 0;
 
@@ -128,6 +134,64 @@ int main(void) {
     if (!expect_status("closed session report", mizu_session_get_last_report(session, &session_report), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!expect_true("closed session report should leave caller output untouched",
                      session_report.stage_kind == 123 && session_report.struct_size == sizeof(session_report))) return 1;
+
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    report_buffer.report_count = 2468;
+    if (!expect_status("closed session prefill", mizu_session_prefill(session, &report_buffer), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session prefill should leave report buffer untouched",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.report_capacity == 1 &&
+                     report_buffer.report_count == 2468 &&
+                     report_buffer.reports == report_storage)) return 1;
+    if (!expect_status("closed session park", mizu_session_park(session, &report_buffer), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session park should leave report buffer untouched",
+                     report_buffer.report_count == 2468 && report_buffer.reports == report_storage)) return 1;
+    if (!expect_status("closed session resume", mizu_session_resume(session, &report_buffer), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session resume should leave report buffer untouched",
+                     report_buffer.report_count == 2468 && report_buffer.reports == report_storage)) return 1;
+
+    memset(&decode_options, 0, sizeof(decode_options));
+    decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 1;
+
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9753;
+    decode_result.stop_reason = MIZU_STOP_REASON_TOKEN_BUDGET;
+    decode_result.result_flags = 8642;
+
+    if (!expect_status("closed session decode", mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session decode should leave result output untouched",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decode_token &&
+                     decode_result.token_capacity == 1 &&
+                     decode_result.token_count == 9753 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_TOKEN_BUDGET &&
+                     decode_result.result_flags == 8642)) return 1;
+    if (!expect_true("closed session decode should leave report buffer untouched",
+                     report_buffer.report_count == 2468 && report_buffer.reports == report_storage)) return 1;
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.data = &decode_token;
+    output_buffer.byte_capacity = sizeof(decode_token);
+    output_buffer.bytes_written = 1357;
+    output_buffer.output_flags = 97531;
+    if (!expect_status("closed session read output", mizu_session_read_output(session, &output_buffer), MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session read output should leave caller buffer untouched",
+                     output_buffer.struct_size == sizeof(output_buffer) &&
+                     output_buffer.output_kind == MIZU_OUTPUT_KIND_TOKEN_IDS &&
+                     output_buffer.data == &decode_token &&
+                     output_buffer.byte_capacity == sizeof(decode_token) &&
+                     output_buffer.bytes_written == 1357 &&
+                     output_buffer.output_flags == 97531)) return 1;
+
     status = mizu_session_close(session);
     if (!expect_status("double session close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     session_info_reuse.struct_size = sizeof(session_info_reuse);

@@ -353,6 +353,11 @@ contains
 
     status_code = validate_runtime_destroy(runtime)
     if (status_code /= MIZU_STATUS_OK) then
+      if (status_code == MIZU_STATUS_BUSY) then
+        call set_runtime_error(runtime, status_code, "runtime cannot destroy while models are live")
+      else
+        call set_runtime_error(runtime, status_code, "runtime cannot destroy in current state")
+      end if
       mizu_runtime_destroy = int(status_code, kind=c_int32_t)
       return
     end if

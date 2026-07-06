@@ -157,6 +157,12 @@ int main(void) {
     if (!expect_true("park failure should replace decode error text",
                      strstr(error_buffer, "session cannot park in current state") != NULL)) return 1;
 
+    status = mizu_runtime_destroy(runtime);
+    if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("runtime-destroy failure should publish live-model diagnostic",
+                     strstr(error_buffer, "runtime cannot destroy while models are live") != NULL)) return 1;
+
     status = mizu_model_close(model);
     if (!expect_status("model close with live session", status, MIZU_STATUS_BUSY)) return 1;
     if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;

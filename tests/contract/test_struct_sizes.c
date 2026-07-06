@@ -25,11 +25,11 @@ static int expect_true(const char *label, int condition) {
 
 int main(void) {
     mizu_runtime_t *runtime = NULL;
-    mizu_runtime_t *bad_runtime = NULL;
+    mizu_runtime_t *bad_runtime = (mizu_runtime_t *)(uintptr_t)1;
     mizu_model_t *model = NULL;
-    mizu_model_t *bad_model = NULL;
+    mizu_model_t *bad_model = (mizu_model_t *)(uintptr_t)1;
     mizu_session_t *session = NULL;
-    mizu_session_t *bad_session = NULL;
+    mizu_session_t *bad_session = (mizu_session_t *)(uintptr_t)1;
     mizu_status_code_t status;
     mizu_runtime_config_t runtime_config;
     mizu_runtime_config_t bad_runtime_config;
@@ -74,9 +74,11 @@ int main(void) {
     bad_runtime_config.struct_size = sizeof(bad_runtime_config) - 1;
     status = mizu_runtime_create(&bad_runtime_config, &bad_runtime);
     if (!expect_status("runtime create should reject short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("runtime create failure should clear stale runtime output", bad_runtime == NULL)) return 1;
 
     status = mizu_runtime_create(&runtime_config, &runtime);
     if (!expect_status("runtime create", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("runtime create should publish a runtime handle", runtime != NULL)) return 1;
 
     memset(&model_config, 0, sizeof(model_config));
     model_config.struct_size = sizeof(model_config);
@@ -89,9 +91,11 @@ int main(void) {
     bad_model_config.struct_size = sizeof(bad_model_config) - 1;
     status = mizu_model_open(runtime, &bad_model_config, &bad_model);
     if (!expect_status("model open should reject short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("model open failure should clear stale model output", bad_model == NULL)) return 1;
 
     status = mizu_model_open(runtime, &model_config, &model);
     if (!expect_status("model open", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("model open should publish a model handle", model != NULL)) return 1;
 
     memset(&session_config, 0, sizeof(session_config));
     session_config.struct_size = sizeof(session_config);
@@ -105,9 +109,11 @@ int main(void) {
     bad_session_config.struct_size = sizeof(bad_session_config) - 1;
     status = mizu_session_open(model, &bad_session_config, &bad_session);
     if (!expect_status("session open should reject short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("session open failure should clear stale session output", bad_session == NULL)) return 1;
 
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("session open should publish a session handle", session != NULL)) return 1;
 
     memset(&model_info, 0, sizeof(model_info));
     model_info.struct_size = sizeof(model_info) - 1;

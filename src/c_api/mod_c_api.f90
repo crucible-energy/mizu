@@ -996,12 +996,14 @@ contains
     end if
 
     if (.not. c_associated(tokens_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "token input pointer is null")
       mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(tokens_ptr, token_values, [int(token_count)])
     if (.not. associated(token_values)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "token input pointer is invalid")
       mizu_session_attach_tokens = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -1009,6 +1011,8 @@ contains
     call stage_tokens(session, int(token_count, kind=i64), status_code, int(token_values, kind=i32))
     if (status_code == MIZU_STATUS_INVALID_STATE) then
       call set_session_owner_runtime_error(session, status_code, "session cannot attach tokens in current state")
+    else if (status_code == MIZU_STATUS_INVALID_ARGUMENT) then
+      call set_session_owner_runtime_error(session, status_code, "token count must be positive")
     end if
     mizu_session_attach_tokens = int(status_code, kind=c_int32_t)
   end function mizu_session_attach_tokens
@@ -1030,29 +1034,41 @@ contains
     end if
 
     if (.not. c_associated(input_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                           "modal input descriptor pointer is null")
       mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(input_ptr, input)
     if (.not. associated(input)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                           "modal input descriptor pointer is invalid")
       mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_input_struct_size(input%struct_size, c_sizeof(input))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "modal input descriptor struct_size is too small")
       mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
       return
     end if
 
     status_code = validate_modal_input_descriptor_c(input)
     if (status_code /= MIZU_STATUS_OK) then
+      if (status_code == MIZU_STATUS_UNSUPPORTED_MODALITY) then
+        call set_session_owner_runtime_error(session, status_code, &
+                                             "modal input modality or storage is unsupported")
+      else
+        call set_session_owner_runtime_error(session, status_code, "modal input descriptor is invalid")
+      end if
       mizu_session_attach_modal_input = int(status_code, kind=c_int32_t)
       return
     end if
 
     if (.not. c_associated(input%data) .and. input%byte_count > 0_c_size_t) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, "modal input data pointer is null")
       mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
@@ -1060,6 +1076,8 @@ contains
     if (input%byte_count > 0_c_size_t) then
       call c_f_pointer(input%data, modal_bytes, [int(input%byte_count)])
       if (.not. associated(modal_bytes)) then
+        call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+                                             "modal input data pointer is invalid")
         mizu_session_attach_modal_input = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
         return
       end if

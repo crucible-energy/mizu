@@ -251,6 +251,46 @@ int main(void) {
     status = mizu_session_attach_tokens(session, token_values, 3, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens before parked-state setup", status, MIZU_STATUS_OK)) return 1;
 
+    status = mizu_session_attach_tokens(session, NULL, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens with null pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("null token pointer should publish runtime error text",
+                     strstr(error_buffer, "token input pointer is null") != NULL)) return 1;
+
+    status = mizu_session_attach_tokens(session, token_values, 0, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens with zero count", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("zero token count should replace earlier error text",
+                     strstr(error_buffer, "token count must be positive") != NULL)) return 1;
+
+    memset(&modal_input, 0, sizeof(modal_input));
+    modal_input.struct_size = sizeof(modal_input);
+    modal_input.slot_name_z = "image";
+    modal_input.placeholder_ordinal = 1;
+    modal_input.modality_kind = MIZU_MODALITY_KIND_IMAGE;
+    modal_input.storage_kind = MIZU_STORAGE_KIND_HOST_TENSOR;
+    modal_input.dtype = MIZU_DTYPE_U8;
+    modal_input.data = image_bytes;
+    modal_input.byte_count = sizeof(image_bytes);
+    modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
+    modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
+
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input with unsupported storage", status, MIZU_STATUS_UNSUPPORTED_MODALITY)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("unsupported modal storage should publish runtime error text",
+                     strstr(error_buffer, "modal input modality or storage is unsupported") != NULL)) return 1;
+
+    modal_input.storage_kind = MIZU_STORAGE_KIND_ENCODED_BYTES;
+    modal_input.data = NULL;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input with null data", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("null modal data should replace earlier error text",
+                     strstr(error_buffer, "modal input data pointer is null") != NULL)) return 1;
+
+    modal_input.data = image_bytes;
+
     memset(prefill_reports, 0, sizeof(prefill_reports));
     memset(&prefill_buffer, 0, sizeof(prefill_buffer));
     prefill_buffer.struct_size = sizeof(prefill_buffer) - 1;

@@ -1726,7 +1726,16 @@ contains
       return
     end if
 
-    if (emitted_token_count > 0_i64) emitted_tokens_local(1) = int(token_value, kind=i32)
+    if (emitted_token_count > 0_i64) then
+      call c_f_pointer(result%token_buffer, token_buffer, [int(emitted_token_count)])
+      if (.not. associated(token_buffer)) then
+        call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+          "decode result token storage pointer is invalid")
+        mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+        return
+      end if
+      emitted_tokens_local(1) = int(token_value, kind=i32)
+    end if
     call complete_decode(session, emitted_token_count, decode_stop_reason, status_code, emitted_tokens_local)
     if (status_code /= MIZU_STATUS_OK) then
       call set_session_owner_runtime_error(session, status_code, "decode state update failed")
@@ -1742,10 +1751,7 @@ contains
     end if
     decode_elapsed_us = elapsed_since_us(stage_started_us)
 
-    if (emitted_token_count > 0_i64) then
-      call c_f_pointer(result%token_buffer, token_buffer, [int(emitted_token_count)])
-      token_buffer(1) = token_value
-    end if
+    if (emitted_token_count > 0_i64) token_buffer(1) = token_value
 
     call finalize_plan_stage_cache(runtime_cache, optimization_store, trim(decode_optimization_key_text), &
       trim(decode_candidate_key_text), decode_plan_id, selection_mode, decode_elapsed_us, &
@@ -1847,6 +1853,12 @@ contains
 
     if (session%last_output_token_count > 0_i64) then
       call c_f_pointer(output%data, token_buffer, [int(session%last_output_token_count)])
+      if (.not. associated(token_buffer)) then
+        call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+          "session output storage pointer is invalid")
+        mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+        return
+      end if
       token_buffer(1:int(session%last_output_token_count)) = int( &
         session%last_output_tokens(1:int(session%last_output_token_count)), kind=c_int32_t)
     end if
@@ -6720,6 +6732,7 @@ contains
     if (buffer_len <= 0) return
 
     call c_f_pointer(buffer_ptr, buffer, [buffer_len])
+    if (.not. associated(buffer)) return
     buffer = c_null_char
 
     copy_len = min(len_trim(text), buffer_len - 1)

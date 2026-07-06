@@ -91,6 +91,17 @@ int main(void) {
     if (!expect_true("error text should mention unavailable backend",
                      strstr(error_buffer, "no requested backend is available on this runtime") != NULL)) return 1;
 
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), (size_t *)(uintptr_t)1);
+    if (!expect_status("copy last error with misaligned required-size pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("misaligned required-size pointer should not mutate caller storage", required_bytes == 0)) return 1;
+
+    memset(error_buffer, 0, sizeof(error_buffer));
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error after misaligned required-size pointer", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("misaligned required-size failure should preserve the previous runtime error text",
+                     strstr(error_buffer, "no requested backend is available on this runtime") != NULL)) return 1;
+
     memset(small_error, 'x', sizeof(small_error));
     status = mizu_runtime_copy_last_error(runtime, small_error, sizeof(small_error), &required_bytes_small);
     if (!expect_status("copy last error should truncate safely", status, MIZU_STATUS_OK)) return 1;

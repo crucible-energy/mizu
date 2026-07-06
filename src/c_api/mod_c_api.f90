@@ -394,6 +394,11 @@ contains
       mizu_runtime_copy_last_error = int(status_code, kind=c_int32_t)
       return
     end if
+    if (c_associated(out_required_ptr) .and. &
+        .not. c_pointer_is_aligned(out_required_ptr, c_size_t_pointer_alignment_bytes())) then
+      mizu_runtime_copy_last_error = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     required_len = int(len_trim(runtime%last_error_message), kind=i64) + 1_i64
     call write_size_t_pointer(out_required_ptr, required_len)

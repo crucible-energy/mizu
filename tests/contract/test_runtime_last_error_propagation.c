@@ -52,8 +52,12 @@ int main(void) {
     mizu_modal_input_desc_t modal_input;
     mizu_output_buffer_t output_buffer;
     mizu_execution_report_t model_report;
+    mizu_execution_report_t prefill_reports[1];
+    mizu_execution_report_t decode_reports[1];
     mizu_execution_report_t session_report;
     mizu_execution_report_t resume_reports[1];
+    mizu_report_buffer_t prefill_buffer;
+    mizu_report_buffer_t decode_buffer;
     mizu_report_buffer_t resume_buffer;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -246,8 +250,56 @@ int main(void) {
 
     status = mizu_session_attach_tokens(session, token_values, 3, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens before parked-state setup", status, MIZU_STATUS_OK)) return 1;
+
+    memset(prefill_reports, 0, sizeof(prefill_reports));
+    memset(&prefill_buffer, 0, sizeof(prefill_buffer));
+    prefill_buffer.struct_size = sizeof(prefill_buffer) - 1;
+    prefill_buffer.reports = prefill_reports;
+    prefill_buffer.report_capacity = 1;
+    status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill with short report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("prefill short-report-buffer failure should publish runtime error text",
+                     strstr(error_buffer, "session report buffer struct_size is too small") != NULL)) return 1;
+
+    memset(&prefill_buffer, 0, sizeof(prefill_buffer));
+    prefill_buffer.struct_size = sizeof(prefill_buffer);
+    prefill_buffer.report_capacity = 1;
+    status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill with missing report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("prefill missing-report-storage failure should replace earlier error text",
+                     strstr(error_buffer, "session report storage pointer is null") != NULL)) return 1;
+
     status = mizu_session_prefill(session, NULL);
     if (!expect_status("prefill before parked-state setup", status, MIZU_STATUS_OK)) return 1;
+
+    {
+        int32_t decoded_token = 0;
+        mizu_decode_options_t decode_options;
+        mizu_decode_result_t decode_result;
+
+        memset(decode_reports, 0, sizeof(decode_reports));
+        memset(&decode_buffer, 0, sizeof(decode_buffer));
+        decode_buffer.struct_size = sizeof(decode_buffer);
+        decode_buffer.report_capacity = 1;
+
+        memset(&decode_options, 0, sizeof(decode_options));
+        decode_options.struct_size = sizeof(decode_options);
+        decode_options.token_budget = 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+        decode_result.token_buffer = &decoded_token;
+        decode_result.token_capacity = 1;
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, &decode_buffer);
+        if (!expect_status("decode with missing report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+        if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+        if (!expect_true("decode missing-report-storage failure should replace earlier error text",
+                         strstr(error_buffer, "session report storage pointer is null") != NULL)) return 1;
+    }
+
     status = mizu_session_park(session, NULL);
     if (!expect_status("park before attachment-state failures", status, MIZU_STATUS_OK)) return 1;
 

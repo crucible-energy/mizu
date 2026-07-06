@@ -800,6 +800,7 @@ contains
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_report_buffer_error(session, out_reports_ptr, status_code)
       mizu_session_park = int(status_code, kind=c_int32_t)
       return
     end if
@@ -882,6 +883,7 @@ contains
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_report_buffer_error(session, out_reports_ptr, status_code)
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1192,6 +1194,7 @@ contains
 
     status_code = prepare_report_buffer(out_reports_ptr, required_reports)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_report_buffer_error(session, out_reports_ptr, status_code)
       mizu_session_prefill = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1486,6 +1489,7 @@ contains
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_report_buffer_error(session, out_reports_ptr, status_code)
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
@@ -2271,6 +2275,40 @@ contains
 
     call set_model_owner_runtime_error(model, status_code, message)
   end subroutine set_session_owner_runtime_error
+
+  subroutine set_session_report_buffer_error(session, report_buffer_ptr, status_code)
+    type(session_state), intent(in) :: session
+    type(c_ptr), value              :: report_buffer_ptr
+    integer(i32), intent(in)        :: status_code
+    type(c_report_buffer), pointer  :: report_buffer
+    integer(i32)                    :: size_status
+
+    if (status_code == MIZU_STATUS_BUFFER_TOO_SMALL) then
+      call c_f_pointer(report_buffer_ptr, report_buffer)
+      if (associated(report_buffer)) then
+        size_status = require_output_struct_size(report_buffer%struct_size, c_sizeof(report_buffer))
+        if (size_status /= MIZU_STATUS_OK) then
+          call set_session_owner_runtime_error(session, status_code, "session report buffer struct_size is too small")
+        else
+          call set_session_owner_runtime_error(session, status_code, "session report buffer is too small")
+        end if
+      else
+        call set_session_owner_runtime_error(session, status_code, "session report buffer is too small")
+      end if
+      return
+    end if
+
+    if (status_code /= MIZU_STATUS_INVALID_ARGUMENT) return
+
+    call c_f_pointer(report_buffer_ptr, report_buffer)
+    if (.not. associated(report_buffer)) then
+      call set_session_owner_runtime_error(session, status_code, "session report buffer pointer is invalid")
+    else if (.not. c_associated(report_buffer%reports)) then
+      call set_session_owner_runtime_error(session, status_code, "session report storage pointer is null")
+    else
+      call set_session_owner_runtime_error(session, status_code, "session report buffer is invalid")
+    end if
+  end subroutine set_session_report_buffer_error
 
   pure subroutine populate_manifest_identity(model, manifest)
     type(model_state), intent(in)   :: model

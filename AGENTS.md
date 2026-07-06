@@ -128,6 +128,10 @@ at `/Users/sam/git/crucible/mizu`.
 - `make test` is part of the repo's required local validation path, and
   targeted `build/tests/test_*` binaries plus tooling tests are appropriate
   during iteration before rerunning the full suite.
+- `make check-debug` is the repo-local deeper safety pass for the same suite
+  under Fortran runtime checks (`-fcheck=all -fbacktrace`) in an isolated
+  debug build directory. Use it when touching bridge, lifetime, handle, or
+  memory-sensitive surfaces.
 
 ## Repo Priorities
 
@@ -215,12 +219,17 @@ at `/Users/sam/git/crucible/mizu`.
   - run `make test`
   - during narrow iteration, prefer the smallest relevant `build/tests/test_*`
     binary or tooling test before rerunning the full suite
+  - when touching memory-sensitive runtime or bridge code, also run
+    `make check-debug`
 - The repo-local hooks are part of normal development, not optional hygiene:
   - pre-commit runs `./scripts/format-local.sh --staged --write --restage`
     and `git diff --cached --check`
   - pre-push runs `bash scripts/mizu-pre-push-check.sh`
   - before claiming a branch is ready, ensure those same checks pass when run
     directly via `make format-check`, `git diff --check`, and `make test`
+  - `make check-debug` is not part of the default pre-push gate because it is
+    intentionally a heavier targeted safety pass, but it should be used for
+    bridge and lifetime-sensitive changes
 - After useful validated work on a feature branch, push the branch promptly so
   remote state stays aligned with local progress. Default to publishing each
   validated useful change rather than batching unrelated work locally.

@@ -11,24 +11,29 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+BUILD_DIR = Path(os.environ.get("BUILD_DIR", "build"))
+TEST_DIR = BUILD_DIR / "tests"
 
 
 def main() -> int:
-    run(["make", "build/tests/test_cache_keys", "build/tests/test_opaque_handles"], cwd=REPO_ROOT)
+    cache_keys_target = str(TEST_DIR / "test_cache_keys")
+    opaque_handles_target = str(TEST_DIR / "test_opaque_handles")
+
+    run(["make", cache_keys_target, opaque_handles_target], cwd=REPO_ROOT)
 
     expect_target_is_out_of_date(
         "unit test binary should track its Fortran sources",
-        "build/tests/test_cache_keys",
+        cache_keys_target,
         REPO_ROOT / "src" / "cache" / "mod_cache_keys.f90",
     )
     expect_target_is_out_of_date(
         "contract test binary should track the public C header",
-        "build/tests/test_opaque_handles",
+        opaque_handles_target,
         REPO_ROOT / "include" / "mizu.h",
     )
     expect_target_is_out_of_date(
         "direct targets should rebuild when the Makefile recipe changes",
-        "build/tests/test_cache_keys",
+        cache_keys_target,
         REPO_ROOT / "Makefile",
     )
 

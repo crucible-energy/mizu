@@ -10,10 +10,12 @@ CFLAGS ?= -std=c11 -Wall -Wextra
 CXXFLAGS ?= -std=c++17 -Wall -Wextra
 NVCCFLAGS ?= -std=c++17 -Iinclude -Isrc/backends/cuda
 OBJCFLAGS ?= -Wall -Wextra -fobjc-arc
+DEBUG_FFLAGS ?= $(FFLAGS) -fcheck=all -fbacktrace
 
 HAVE_NVCC := $(shell command -v $(NVCC) >/dev/null 2>&1 && echo 1 || echo 0)
 
 BUILD_DIR := build
+DEBUG_BUILD_DIR ?= $(BUILD_DIR)-debug
 TEST_DIR := $(BUILD_DIR)/tests
 CUDA_BRIDGE_OBJ := $(BUILD_DIR)/cuda_bridge.o
 APPLE_BRIDGE_OBJ := $(BUILD_DIR)/apple_bridge.o
@@ -245,7 +247,7 @@ $1: $$($2) | $$(TEST_DIR)
 		$$($2) $4
 endef
 
-.PHONY: all hooks format format-check check-local test unit-tests contract-tests contract-smokes tool-tests clean
+.PHONY: all hooks format format-check check-local check-debug clean-debug test unit-tests contract-tests contract-smokes tool-tests clean
 
 all: test
 
@@ -261,6 +263,10 @@ format-check:
 check-local: format-check
 	git diff --check
 	$(MAKE) test
+
+check-debug: format-check clean-debug
+	git diff --check
+	$(MAKE) BUILD_DIR=$(DEBUG_BUILD_DIR) FFLAGS='$(DEBUG_FFLAGS)' test
 
 test: unit-tests contract-tests tool-tests
 
@@ -281,8 +287,11 @@ contract-smokes: $(CONTRACT_SMOKES)
 tool-tests:
 	@set -e; for test_script in $(TOOL_TESTS); do \
 		echo "running $$test_script"; \
-		python3 $$test_script || exit $$?; \
+		BUILD_DIR=$(BUILD_DIR) python3 $$test_script || exit $$?; \
 	done
+
+clean-debug:
+	rm -rf $(DEBUG_BUILD_DIR)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -610,4 +619,4 @@ $(TEST_DIR)/test_stage_reports: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIM
 		$(CUDA_BRIDGE_LINK_LIBS)
 
 clean:
-	rm -rf $(BUILD_DIR) ./*.mod
+	rm -rf $(BUILD_DIR) $(DEBUG_BUILD_DIR) ./*.mod

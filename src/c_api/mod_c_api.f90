@@ -6699,7 +6699,8 @@ contains
     c_length = c_strlen(string_ptr)
     if (c_length == 0_c_size_t) return
 
-    copy_len = min(int(c_length), len(text))
+    copy_len = clamp_c_size_t_to_default_int(min(c_length, int(len(text), kind=c_size_t)))
+    if (copy_len <= 0) return
     call c_f_pointer(string_ptr, chars, [copy_len])
     text(1:copy_len) = transfer(chars(1:copy_len), text(1:copy_len))
   end subroutine copy_c_string_ptr_to_fortran
@@ -6709,20 +6710,29 @@ contains
     type(c_ptr), value           :: buffer_ptr
     integer(c_size_t), value     :: capacity
     character(kind=c_char), pointer :: buffer(:)
-    integer                        :: copy_len, index_char
+    integer                        :: buffer_len, copy_len, index_char
 
     if (.not. c_associated(buffer_ptr)) return
     if (capacity == 0_c_size_t) return
 
-    call c_f_pointer(buffer_ptr, buffer, [int(capacity)])
+    buffer_len = clamp_c_size_t_to_default_int(min(capacity, int(len_trim(text) + 1, kind=c_size_t)))
+    if (buffer_len <= 0) return
+
+    call c_f_pointer(buffer_ptr, buffer, [buffer_len])
     buffer = c_null_char
 
-    copy_len = min(len_trim(text), int(capacity) - 1)
+    copy_len = min(len_trim(text), buffer_len - 1)
     do index_char = 1, copy_len
       buffer(index_char) = text(index_char:index_char)
     end do
     buffer(copy_len + 1) = c_null_char
   end subroutine copy_fortran_string_to_c
+
+  pure integer function clamp_c_size_t_to_default_int(value) result(clamped_value)
+    integer(c_size_t), intent(in) :: value
+
+    clamped_value = int(min(value, int(huge(0), kind=c_size_t)))
+  end function clamp_c_size_t_to_default_int
 
   subroutine write_size_t_pointer(size_ptr, value)
     type(c_ptr), value :: size_ptr

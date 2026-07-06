@@ -253,14 +253,6 @@ module mod_c_api
   integer(i64), save :: retired_model_box_count = 0_i64
   integer(i64), save :: retired_session_box_count = 0_i64
 
-  interface
-    function c_strlen(str) bind(c, name="strlen") result(length)
-      import c_ptr, c_size_t
-      type(c_ptr), value :: str
-      integer(c_size_t)  :: length
-    end function c_strlen
-  end interface
-
 contains
 
   integer(c_int32_t) function mizu_get_abi_version() bind(c, name="mizu_get_abi_version")
@@ -6694,20 +6686,24 @@ contains
     type(c_ptr), value       :: string_ptr
     character(len=*), intent(out) :: text
     character(kind=c_char), pointer :: chars(:)
-    integer(c_size_t)        :: c_length
+    integer                  :: buffer_len
     integer                  :: copy_len
+    integer                  :: index_char
 
     text = ""
 
     if (.not. c_associated(string_ptr)) return
 
-    c_length = c_strlen(string_ptr)
-    if (c_length == 0_c_size_t) return
+    buffer_len = len(text)
+    if (buffer_len <= 0) return
+    call c_f_pointer(string_ptr, chars, [buffer_len])
+    if (.not. associated(chars)) return
 
-    copy_len = clamp_c_size_t_to_default_int(min(c_length, int(len(text), kind=c_size_t)))
+    copy_len = bounded_c_string_copy_length(chars)
     if (copy_len <= 0) return
-    call c_f_pointer(string_ptr, chars, [copy_len])
-    text(1:copy_len) = transfer(chars(1:copy_len), text(1:copy_len))
+    do index_char = 1, copy_len
+      text(index_char:index_char) = transfer(chars(index_char), text(index_char:index_char))
+    end do
   end subroutine copy_c_string_ptr_to_fortran
 
   subroutine copy_fortran_string_to_c(text, buffer_ptr, capacity)
@@ -6738,6 +6734,17 @@ contains
 
     clamped_value = int(min(value, int(huge(0), kind=c_size_t)))
   end function clamp_c_size_t_to_default_int
+
+  pure integer function bounded_c_string_copy_length(chars) result(copy_len)
+    character(kind=c_char), intent(in) :: chars(:)
+    integer                            :: index_char
+
+    copy_len = 0
+    do index_char = 1, size(chars)
+      if (chars(index_char) == c_null_char) exit
+      copy_len = index_char
+    end do
+  end function bounded_c_string_copy_length
 
   subroutine write_size_t_pointer(size_ptr, value)
     type(c_ptr), value :: size_ptr

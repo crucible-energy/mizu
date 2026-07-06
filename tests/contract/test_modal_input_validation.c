@@ -41,6 +41,7 @@ int main(void) {
         0, 1, 2, 3, 4, 5, 6, 7,
         8, 9, 10, 11, 12, 13, 14, 15
     };
+    char non_terminated_slot_name[2048];
     uint8_t *borrowed_image_bytes = NULL;
     int64_t shape[1] = {8};
     int32_t tokens[1] = {7};
@@ -114,6 +115,13 @@ int main(void) {
     modal_input.slot_name_z = "audio";
     status = mizu_session_attach_modal_input(session, &modal_input);
     if (!expect_status("unknown slot should be rejected", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    modal_input.slot_name_z = "image";
+
+    memset(non_terminated_slot_name, 'x', sizeof(non_terminated_slot_name));
+    memcpy(non_terminated_slot_name, "image", 5);
+    modal_input.slot_name_z = non_terminated_slot_name;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("unterminated slot name should be rejected", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     modal_input.slot_name_z = "image";
 
     modal_input.placeholder_ordinal = 2;

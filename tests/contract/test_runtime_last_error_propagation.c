@@ -261,6 +261,55 @@ int main(void) {
     if (!expect_true("parked modal-attach failure should replace earlier error text",
                      strstr(error_buffer, "session cannot attach modal input in current state") != NULL)) return 1;
 
+    status = mizu_session_resume(session, NULL);
+    if (!expect_status("resume before read-output validation", status, MIZU_STATUS_OK)) return 1;
+
+    {
+        int32_t decoded_token = 0;
+        mizu_decode_options_t decode_options;
+        mizu_decode_result_t decode_result;
+
+        memset(&decode_options, 0, sizeof(decode_options));
+        decode_options.struct_size = sizeof(decode_options);
+        decode_options.token_budget = 1;
+
+        memset(&decode_result, 0, sizeof(decode_result));
+        decode_result.struct_size = sizeof(decode_result);
+        decode_result.token_buffer = &decoded_token;
+        decode_result.token_capacity = 1;
+
+        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+        if (!expect_status("decode before read-output validation", status, MIZU_STATUS_OK)) return 1;
+    }
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_NONE;
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output with unsupported kind", status, MIZU_STATUS_UNSUPPORTED_MODALITY)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("unsupported output kind should publish runtime error text",
+                     strstr(error_buffer, "session output kind is unsupported") != NULL)) return 1;
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output with undersized buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("undersized output buffer should replace earlier error text",
+                     strstr(error_buffer, "session output buffer is too small") != NULL)) return 1;
+
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.byte_capacity = sizeof(int32_t);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output with missing storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!copy_runtime_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes)) return 1;
+    if (!expect_true("missing output storage should replace earlier error text",
+                     strstr(error_buffer, "session output storage pointer is null") != NULL)) return 1;
+
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_close(model);

@@ -1658,18 +1658,23 @@ contains
     end if
 
     if (.not. c_associated(out_output_ptr)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session output buffer pointer is null")
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(out_output_ptr, output)
     if (.not. associated(output)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session output buffer pointer is invalid")
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_output_struct_size(output%struct_size, c_sizeof(output))
     if (status_code /= MIZU_STATUS_OK) then
+      call set_session_owner_runtime_error(session, status_code, "session output buffer struct_size is too small")
       mizu_session_read_output = int(status_code, kind=c_int32_t)
       return
     end if
@@ -1682,6 +1687,8 @@ contains
     end if
 
     if (int(output%output_kind, kind=i32) /= MIZU_OUTPUT_KIND_TOKEN_IDS) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_UNSUPPORTED_MODALITY, &
+        "session output kind is unsupported")
       mizu_session_read_output = int(MIZU_STATUS_UNSUPPORTED_MODALITY, kind=c_int32_t)
       return
     end if
@@ -1690,11 +1697,14 @@ contains
     output%bytes_written = int(bytes_required, kind=c_size_t)
 
     if (output%byte_capacity < int(bytes_required, kind=c_size_t)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_BUFFER_TOO_SMALL, "session output buffer is too small")
       mizu_session_read_output = int(MIZU_STATUS_BUFFER_TOO_SMALL, kind=c_int32_t)
       return
     end if
 
     if (bytes_required > 0_i64 .and. .not. c_associated(output%data)) then
+      call set_session_owner_runtime_error(session, MIZU_STATUS_INVALID_ARGUMENT, &
+        "session output storage pointer is null")
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if

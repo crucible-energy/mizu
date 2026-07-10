@@ -65,6 +65,40 @@ def main() -> int:
             "Refusing to validate a direct main push. Use a feature branch.",
         )
 
+        allow_main_env = {"MIZU_ALLOW_MAIN_PUSH": "1"}
+
+        main_allow_log = temp_root_path / "main-allow-make.log"
+        main_allow_completed = git_push(
+            repo_root,
+            fake_make_dir,
+            main_allow_log,
+            "main",
+            extra_env=allow_main_env,
+        )
+        expect_equal("allowed main push return code", main_allow_completed.returncode, 0)
+        expect_equal("allowed main push make targets", main_allow_log.read_text(encoding="utf-8"), "test\n")
+        main_allow_output = combined_output(main_allow_completed)
+        if "Escalating to make check-debug" in main_allow_output:
+            raise AssertionError(f"allowed main push should not escalate: {main_allow_output!r}")
+        if "Mizu pre-push gate passed on branch: main" not in main_allow_output:
+            raise AssertionError(f"missing success message for allowed main push: {main_allow_output!r}")
+
+        main_source_allow_log = temp_root_path / "main-source-allow-make.log"
+        main_source_allow_completed = git_push(
+            repo_root,
+            fake_make_dir,
+            main_source_allow_log,
+            "main:feat/from-main",
+            extra_env=allow_main_env,
+        )
+        expect_equal("allowed main source push return code", main_source_allow_completed.returncode, 0)
+        expect_equal("allowed main source push make targets", main_source_allow_log.read_text(encoding="utf-8"), "test\n")
+        main_source_allow_output = combined_output(main_source_allow_completed)
+        if "Escalating to make check-debug" in main_source_allow_output:
+            raise AssertionError(f"allowed main source push should not escalate: {main_source_allow_output!r}")
+        if "Mizu pre-push gate passed on branch: main" not in main_source_allow_output:
+            raise AssertionError(f"missing success message for allowed main source push: {main_source_allow_output!r}")
+
         run(["git", "checkout", "-qb", "feat/docs-only"], cwd=repo_root)
         run(["git", "branch", "--set-upstream-to=main"], cwd=repo_root)
         write_text(repo_root / "README.md", "Current docs change.\n")
@@ -132,13 +166,16 @@ def git_push(
     repo_root: Path,
     fake_make_dir: Path,
     log_path: Path,
-    branch: str,
+    refspec: str,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = sandbox_env()
     env["PATH"] = f"{fake_make_dir}:{env['PATH']}"
     env["MIZU_TEST_MAKE_LOG"] = str(log_path)
+    if extra_env is not None:
+        env.update(extra_env)
     return subprocess.run(
-        ["git", "push", "-q", "origin", branch],
+        ["git", "push", "-q", "origin", refspec],
         cwd=repo_root,
         check=False,
         text=True,

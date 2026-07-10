@@ -767,6 +767,12 @@ contains
     logical      :: checkpoint_offloaded
     integer(i32) :: status_code
 
+    status_code = prepare_report_buffer(out_reports_ptr, 0_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_park = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_park = int(status_code, kind=c_int32_t)
@@ -839,6 +845,12 @@ contains
     integer(i32) :: report_route
     logical      :: restored_ok
     integer(i32) :: status_code
+
+    status_code = prepare_report_buffer(out_reports_ptr, 0_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_resume = int(status_code, kind=c_int32_t)
+      return
+    end if
 
     call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
@@ -1111,6 +1123,12 @@ contains
     type(artifact_metadata_record) :: projector_artifact_metadata
     type(artifact_metadata_record) :: prefill_artifact_metadata
 
+    status_code = prepare_report_buffer(out_reports_ptr, 0_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_prefill = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_prefill = int(status_code, kind=c_int32_t)
@@ -1354,6 +1372,30 @@ contains
     logical      :: decode_workspace_reserved
     type(artifact_metadata_record) :: decode_artifact_metadata
 
+    if (.not. c_associated(out_result_ptr)) then
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    call c_f_pointer(out_result_ptr, result)
+    if (.not. associated(result)) then
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = require_output_struct_size(result%struct_size, c_sizeof(result))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_decode_result_output(result)
+    status_code = prepare_report_buffer(out_reports_ptr, 0_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
+      return
+    end if
+
     call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
@@ -1381,24 +1423,18 @@ contains
       return
     end if
 
-    if (.not. c_associated(options_ptr) .or. .not. c_associated(out_result_ptr)) then
+    if (.not. c_associated(options_ptr)) then
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     call c_f_pointer(options_ptr, options)
-    call c_f_pointer(out_result_ptr, result)
-    if ((.not. associated(options)) .or. (.not. associated(result))) then
+    if (.not. associated(options)) then
       mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
     end if
 
     status_code = require_input_struct_size(options%struct_size, c_sizeof(options))
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_session_decode_step = int(status_code, kind=c_int32_t)
-      return
-    end if
-    status_code = require_output_struct_size(result%struct_size, c_sizeof(result))
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
@@ -1528,12 +1564,6 @@ contains
     integer(i32) :: status_code
     integer(i64) :: bytes_required
 
-    call resolve_session_handle(session_ptr, box, session, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_session_read_output = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     if (.not. c_associated(out_output_ptr)) then
       mizu_session_read_output = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
@@ -1546,6 +1576,13 @@ contains
     end if
 
     status_code = require_output_struct_size(output%struct_size, c_sizeof(output))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_read_output = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_output_buffer_output(output)
+    call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_read_output = int(status_code, kind=c_int32_t)
       return
@@ -1930,6 +1967,21 @@ contains
     c_report%cache_flags = 0_c_int64_t
     c_report%elapsed_us = 0_c_int64_t
   end subroutine clear_execution_report_output
+
+  subroutine clear_decode_result_output(result)
+    type(c_decode_result), pointer, intent(inout) :: result
+
+    result%token_count = 0_c_size_t
+    result%stop_reason = 0_c_int32_t
+    result%result_flags = 0_c_int64_t
+  end subroutine clear_decode_result_output
+
+  subroutine clear_output_buffer_output(output)
+    type(c_output_buffer), pointer, intent(inout) :: output
+
+    output%bytes_written = 0_c_size_t
+    output%output_flags = 0_c_int64_t
+  end subroutine clear_output_buffer_output
 
   integer(i64) function find_runtime_handle_slot(runtime_ptr) result(slot_id)
     type(c_ptr), value :: runtime_ptr
@@ -6306,8 +6358,9 @@ contains
     status_code = require_output_struct_size(report_buffer%struct_size, c_sizeof(report_buffer))
     if (status_code /= MIZU_STATUS_OK) return
 
-    report_buffer%report_count = int(required_count, kind=c_size_t)
+    report_buffer%report_count = 0_c_size_t
     if (report_buffer%report_capacity < int(required_count, kind=c_size_t)) then
+      report_buffer%report_count = int(required_count, kind=c_size_t)
       status_code = MIZU_STATUS_BUFFER_TOO_SMALL
     else if (required_count > 0_i64 .and. .not. c_associated(report_buffer%reports)) then
       status_code = MIZU_STATUS_INVALID_ARGUMENT
@@ -6328,7 +6381,7 @@ contains
     if (.not. associated(report_buffer)) return
     if (.not. c_associated(report_buffer%reports)) return
 
-    report_count = int(report_buffer%report_count)
+    report_count = merge(2, 1, secondary_report%stage_kind /= MIZU_STAGE_NONE)
     call c_f_pointer(report_buffer%reports, reports, [report_count])
     if (.not. associated(reports)) return
 
@@ -6338,6 +6391,8 @@ contains
     else if (report_count >= 1) then
       call copy_internal_report_to_c(primary_report, reports(1))
     end if
+
+    report_buffer%report_count = int(report_count, kind=c_size_t)
   end subroutine fill_report_buffer
 
 end module mod_c_api

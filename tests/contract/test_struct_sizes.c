@@ -194,12 +194,34 @@ int main(void) {
     if (!expect_status("decode should reject short options struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
 
     decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 0;
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 2;
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject zero token budget", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed decode should clear output token count", decode_result.token_count == 0)) return 1;
+    if (!expect_true("failed decode should clear output stop reason", decode_result.stop_reason == MIZU_STOP_REASON_NONE)) {
+        return 1;
+    }
+    if (!expect_true("failed decode should clear output flags", decode_result.result_flags == 0)) return 1;
+    if (!expect_true("failed decode should not publish reports", report_buffer.report_count == 0)) return 1;
+
     memset(&decode_result, 0, sizeof(decode_result));
     decode_result.struct_size = sizeof(decode_result) - 1;
     decode_result.token_capacity = 1;
     status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
     if (!expect_status("decode should reject short result struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
 
+    decode_options.token_budget = 1;
     memset(&decode_result, 0, sizeof(decode_result));
     decode_result.struct_size = sizeof(decode_result);
     status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
@@ -215,8 +237,12 @@ int main(void) {
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.bytes_written = 9;
+    output_buffer.output_flags = UINT64_C(9);
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("failed decode should not publish output", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("failed decode should clear output bytes", output_buffer.bytes_written == 0)) return 1;
+    if (!expect_true("failed decode should clear output flags", output_buffer.output_flags == 0)) return 1;
 
     {
         int32_t decoded_token = 0;

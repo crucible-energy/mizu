@@ -85,13 +85,15 @@ fi
 git diff --check
 make test
 
-for push_ref in "${push_refs[@]}"; do
-  IFS=":" read -r local_sha remote_sha <<< "$push_ref"
-  mark_debug_gate_if_needed_for_range "$local_sha" "$remote_sha"
-  if [[ "$debug_gate_required" == "1" ]]; then
-    break
-  fi
-done
+if [[ ${#push_refs[@]} -gt 0 ]]; then
+  for push_ref in "${push_refs[@]}"; do
+    IFS=":" read -r local_sha remote_sha <<< "$push_ref"
+    mark_debug_gate_if_needed_for_range "$local_sha" "$remote_sha"
+    if [[ "$debug_gate_required" == "1" ]]; then
+      break
+    fi
+  done
+fi
 
 if [[ "$debug_gate_required" == "1" ]]; then
   echo "Detected memory-sensitive changes in push range; running make check-debug"

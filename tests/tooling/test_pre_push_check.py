@@ -45,6 +45,19 @@ def main() -> int:
         run(["git", "add", "README.md"], cwd=source_repo)
         run(["git", "commit", "-qm", "main-only"], cwd=source_repo)
         source_head = git_rev_parse(source_repo, "HEAD")
+        allow_main_env = {"MIZU_ALLOW_MAIN_PUSH": "1"}
+        main_allow_log = temp_root_path / "main-allow-make.log"
+        main_allow_completed = run_pre_push(
+            source_repo,
+            main_allow_log,
+            f"refs/heads/main {source_head} refs/heads/main {ZERO_OID}\n",
+            extra_env=allow_main_env,
+        )
+        expect_equal("allowed main push return code", main_allow_completed.returncode, 0)
+        expect_equal("allowed main push make targets", main_allow_log.read_text(encoding="utf-8"), "test\n")
+        if "Escalating to make check-debug" in combined_output(main_allow_completed):
+            raise AssertionError(f"allowed main push should not escalate: {combined_output(main_allow_completed)!r}")
+
         run(["git", "checkout", "-qb", "feat/source-main-guard"], cwd=source_repo)
         source_log = temp_root_path / "source-main-make.log"
         source_completed = run_pre_push(
@@ -58,6 +71,17 @@ def main() -> int:
             source_log,
             "Refusing push from main (refs/heads/main -> refs/heads/feat/from-main). Use a feature branch.",
         )
+        source_allow_log = temp_root_path / "source-main-allow-make.log"
+        source_allow_completed = run_pre_push(
+            source_repo,
+            source_allow_log,
+            f"refs/heads/main {source_head} refs/heads/feat/from-main {ZERO_OID}\n",
+            extra_env=allow_main_env,
+        )
+        expect_equal("allowed source-main push return code", source_allow_completed.returncode, 0)
+        expect_equal("allowed source-main make targets", source_allow_log.read_text(encoding="utf-8"), "test\n")
+        if "Escalating to make check-debug" in combined_output(source_allow_completed):
+            raise AssertionError(f"allowed source-main push should not escalate: {combined_output(source_allow_completed)!r}")
 
         runtime_repo = init_repo(temp_root_path / "runtime")
         run(["git", "checkout", "-qb", "feat/runtime"], cwd=runtime_repo)
@@ -103,7 +127,12 @@ def init_repo(repo_root: Path) -> Path:
     return repo_root
 
 
-def run_pre_push(repo_root: Path, log_path: Path, stdin_text: str) -> subprocess.CompletedProcess[str]:
+def run_pre_push(
+    repo_root: Path,
+    log_path: Path,
+    stdin_text: str,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     fake_make_dir = repo_root / ".fake-bin"
     fake_make_dir.mkdir(exist_ok=True)
     fake_make_path = fake_make_dir / "make"
@@ -118,6 +147,8 @@ def run_pre_push(repo_root: Path, log_path: Path, stdin_text: str) -> subprocess
     env = sandbox_env()
     env["PATH"] = f"{fake_make_dir}:{env['PATH']}"
     env["MIZU_TEST_MAKE_LOG"] = str(log_path)
+    if extra_env is not None:
+        env.update(extra_env)
     return subprocess.run(
         ["bash", "scripts/mizu-pre-push-check.sh"],
         cwd=repo_root,

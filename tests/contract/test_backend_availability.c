@@ -29,7 +29,10 @@ int main(void) {
     mizu_model_t *model = NULL;
     mizu_status_code_t status;
     size_t required_bytes = 0;
+    size_t required_bytes_only = 0;
+    size_t truncated_required_bytes = 0;
     char error_buffer[256];
+    char truncated_error_buffer[8];
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
 
@@ -71,8 +74,24 @@ int main(void) {
     memset(error_buffer, 0, sizeof(error_buffer));
     status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
     if (!expect_status("copy last error", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("copy last error should report full required size",
+                     required_bytes == strlen(error_buffer) + 1)) return 1;
     if (!expect_true("error text should mention unavailable backend",
                      strstr(error_buffer, "no requested backend is available on this runtime") != NULL)) return 1;
+    status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes_only);
+    if (!expect_status("copy last error size only", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("size-only error copy should match required size",
+                     required_bytes_only == required_bytes)) return 1;
+    memset(truncated_error_buffer, 'X', sizeof(truncated_error_buffer));
+    status = mizu_runtime_copy_last_error(runtime, truncated_error_buffer, sizeof(truncated_error_buffer),
+                                          &truncated_required_bytes);
+    if (!expect_status("copy last error short buffer", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("short-buffer error copy should match required size",
+                     truncated_required_bytes == required_bytes)) return 1;
+    if (!expect_true("short-buffer error copy should stay null terminated",
+                     truncated_error_buffer[sizeof(truncated_error_buffer) - 1] == '\0')) return 1;
+    if (!expect_true("short-buffer error copy should preserve prefix",
+                     strncmp(error_buffer, truncated_error_buffer, sizeof(truncated_error_buffer) - 1) == 0)) return 1;
 
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("destroy unavailable runtime", status, MIZU_STATUS_OK)) return 1;

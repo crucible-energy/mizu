@@ -1,9 +1,19 @@
 # Mizu Current State
 
-Last updated: 2026-04-12
+Last updated: 2026-07-09
 
 ## Latest Checkpoint
 
+- current milestone: as of 2026-07-09, the repo-local QA gate is green
+  through `make format-check`, `git diff --check`, `make test`, and
+  `make check-debug`, with the expected optional `test_qwench_gguf_cuda_smoke`
+  skip when local Qwench GGUF assets are absent
+- current milestone: the current QA pass broadens contract coverage for
+  stale-handle fail-closed behavior, failed-open output preservation, bounded
+  C-string ingress, backend-availability and routing failures, runtime
+  last-error propagation, terminal decode behavior, session eviction, and
+  checkpoint-restore guards, while pre-push now auto-escalates to
+  `make check-debug` for memory-sensitive runtime, bridge, and cache changes
 - current milestone: CUDA weight-pack `.packbuffer` records are now version 2
   and carry per-pack `source_offset` lanes. Warm dependency hashing accepts
   both v1 and v2 buffers, folds the new offset when present, and contract
@@ -285,9 +295,10 @@ Last updated: 2026-04-12
   drives Qwen projector/prefill/decode placeholder execution, and verifies
   quantized storage markers such as `q4_k` and `iq2_xxs` survive into CUDA
   weight artifacts while mmproj tensors stay out of the decoder weight pack
-- immediate next target: use the source-offset-bearing `.packbuffer` records to
-  start carving real file-backed page/tile materialization, then tighten any
-  family-specific tensor-role gaps the inventories reveal
+- immediate next target: finish the family-specific Qwen/Gemma import-mapping
+  gaps the current inventories still expose, then replace placeholder CUDA
+  packed-weight and execution materialization with backend-native artifacts and
+  math without relaxing the current contract coverage
 
 ## Roadmap Status
 
@@ -297,13 +308,18 @@ Last updated: 2026-04-12
   - park and resume are wired
   - workspace reuse exists
   - optimization evidence and cache identity are persisted
+- public C ABI QA is now broad enough to lock fail-closed behavior for stale
+  handles, failed opens, routing and availability failures, session guard
+  paths, and last-error propagation through the contract suite
 - CUDA is the most advanced backend:
   - capability probing exists
   - planner and bridge seams exist
   - projector, prefill, and decode all execute through placeholder CUDA paths
   - backend-owned session state survives prefill, decode, park, and resume
-- the cache and self-optimization layers have real shape, but backend-native
-  weight and plan caches are still ahead of us
+- the cache and self-optimization layers are real runtime surfaces, including
+  strict plan, weight, session, and multimodal caches plus persisted winner
+  evidence, but backend-native packed weights and backend-native executable
+  plan artifacts are still ahead of us
 - Apple is now beyond pure scaffolding:
   - capability probing uses the Apple bridge
   - planner parity exists for ANE and Metal
@@ -314,7 +330,7 @@ Last updated: 2026-04-12
 - model import and target-asset mapping are still only partially done, but
   there are now concrete safetensors and GGUF smoke-import paths for local
   Qwen/Gemma-shaped asset directories and Qwench-style GGUF caches
-- the importer/output-layout contract now has a real first shape, but target
+- the importer/output-layout contract is documented and enforced, but target
   family tensor mapping is still mostly ahead of us
 
 In short:

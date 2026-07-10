@@ -23,7 +23,7 @@ Qwen/Gemma inference with real packed weights and real backend math.
 
 - Apple `projector`, `prefill`, and `decode`
 - CUDA `projector`, `prefill`, and `decode`
-- model-load pack generation
+- backend-native packed-weight generation
 - backend-native plan materialization
 - KV/state representation as real transformer execution state
 - imported target-model assets for real Qwen/Gemma runs
@@ -57,13 +57,12 @@ But the repo currently exercises tiny fixtures under:
 
 ## Shortest Path To Real Inference
 
-1. finish importer and manifest mapping for real Qwen/Gemma assets
-2. define importer output layout and validation rules
-3. build real backend pack identity and packed-weight generation
-4. materialize backend-native plan artifacts
-5. replace the placeholder CUDA path with real transformer math
-6. replace surrogate live-context state with a real KV/state representation
-7. move Apple from placeholder bridge behavior to real Metal/ANE execution
+1. finish family-specific importer and manifest mapping for real Qwen/Gemma assets
+2. turn deterministic placeholder CUDA pack layouts into backend-native packed weights
+3. materialize backend-native plan artifacts
+4. replace the placeholder CUDA path with real transformer math
+5. replace surrogate live-context state with a real KV/state representation
+6. move Apple from placeholder bridge behavior to real Metal/ANE execution
 
 ## Why The Placeholder Path Still Matters
 

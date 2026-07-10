@@ -133,6 +133,10 @@ def main() -> int:
             raise AssertionError(f"unexpected token_embd shape in GGUF inventory: {token_row[8]}")
         expect_file_contains(
             qwen_output / "mizu_import" / "projector" / "projector_assets.mizu",
+            "v.blk.0.attn_qkv.weight|weights/mmproj-qwen35.gguf|offset=0|ggml_type=f16",
+        )
+        expect_file_contains(
+            qwen_output / "mizu_import" / "projector" / "projector_assets.mizu",
             "mm.0.weight|weights/mmproj-qwen35.gguf|offset=128|ggml_type=f16",
         )
         expect_path_exists(qwen_output / "mizu_import" / "weights" / "qwen35.gguf")

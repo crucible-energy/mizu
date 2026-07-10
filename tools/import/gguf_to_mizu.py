@@ -260,7 +260,7 @@ def build_bundle(model_gguf: Path, projector_gguf: Path | None, output_root: Pat
     source_revision = resolve_source_revision(args.source_revision, gguf_files)
     tokenizer_name = resolve_tokenizer_name(gguf_files[0], family)
     source_hash_text = build_source_hash_text(source_model_id, source_revision, gguf_files, tensors)
-    projector_tensors = [tensor for tensor in tensors if tensor["role"] == "multimodal_projector"]
+    projector_tensors = [tensor for tensor in tensors if is_projector_side_role(tensor["role"])]
     has_projector = bool(projector_tensors)
     projector_revision = stable_positive_i64(source_hash_text + ":projector")
 
@@ -493,6 +493,10 @@ def classify_tensor_role(name: str, source_kind: str, general_type: str) -> str:
     if "attn_" in lowered or "ffn_" in lowered or "ssm_" in lowered:
         return "decoder_stack"
     return "model_tensor"
+
+
+def is_projector_side_role(role_name: str) -> bool:
+    return role_name in {"multimodal_projector", "vision_encoder"}
 
 
 def normalize_ggml_dtype(ggml_type: str) -> str:

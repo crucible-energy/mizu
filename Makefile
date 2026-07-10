@@ -97,6 +97,7 @@ CONTRACT_BINS := \
 
 TOOL_TESTS := \
 	tests/tooling/test_format_local.py \
+	tests/tooling/test_pre_push_check.py \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
 

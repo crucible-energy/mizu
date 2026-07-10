@@ -56,15 +56,6 @@ def main() -> int:
             "Refusing push to main (refs/heads/main -> refs/heads/main). Use a feature branch.",
         )
 
-        main_source_log = temp_root_path / "main-source-make.log"
-        main_source_completed = git_push(repo_root, fake_make_dir, main_source_log, "main:feat/from-main")
-        expect_push_rejected(
-            "main source push",
-            main_source_completed,
-            main_source_log,
-            "Refusing to validate a direct main push. Use a feature branch.",
-        )
-
         allow_main_env = {"MIZU_ALLOW_MAIN_PUSH": "1"}
 
         main_allow_log = temp_root_path / "main-allow-make.log"
@@ -83,6 +74,17 @@ def main() -> int:
         if "Mizu pre-push gate passed on branch: main" not in main_allow_output:
             raise AssertionError(f"missing success message for allowed main push: {main_allow_output!r}")
 
+        run(["git", "checkout", "-qb", "feat/source-main-guard"], cwd=repo_root)
+
+        main_source_log = temp_root_path / "main-source-make.log"
+        main_source_completed = git_push(repo_root, fake_make_dir, main_source_log, "main:feat/from-main")
+        expect_push_rejected(
+            "main source push",
+            main_source_completed,
+            main_source_log,
+            "Refusing push from main (refs/heads/main -> refs/heads/feat/from-main). Use a feature branch.",
+        )
+
         main_source_allow_log = temp_root_path / "main-source-allow-make.log"
         main_source_allow_completed = git_push(
             repo_root,
@@ -96,9 +98,10 @@ def main() -> int:
         main_source_allow_output = combined_output(main_source_allow_completed)
         if "Escalating to make check-debug" in main_source_allow_output:
             raise AssertionError(f"allowed main source push should not escalate: {main_source_allow_output!r}")
-        if "Mizu pre-push gate passed on branch: main" not in main_source_allow_output:
+        if "Mizu pre-push gate passed on branch: feat/source-main-guard" not in main_source_allow_output:
             raise AssertionError(f"missing success message for allowed main source push: {main_source_allow_output!r}")
 
+        run(["git", "checkout", "-q", "main"], cwd=repo_root)
         run(["git", "checkout", "-qb", "feat/docs-only"], cwd=repo_root)
         run(["git", "branch", "--set-upstream-to=main"], cwd=repo_root)
         write_text(repo_root / "README.md", "Current docs change.\n")

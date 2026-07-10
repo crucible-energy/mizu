@@ -40,6 +40,25 @@ def main() -> int:
         if "Escalating to make check-debug" in docs_completed.stdout:
             raise AssertionError("docs-only push should not escalate to check-debug")
 
+        source_repo = init_repo(temp_root_path / "source-main")
+        write_text(source_repo / "README.md", "Current main-only change.\n")
+        run(["git", "add", "README.md"], cwd=source_repo)
+        run(["git", "commit", "-qm", "main-only"], cwd=source_repo)
+        source_head = git_rev_parse(source_repo, "HEAD")
+        run(["git", "checkout", "-qb", "feat/source-main-guard"], cwd=source_repo)
+        source_log = temp_root_path / "source-main-make.log"
+        source_completed = run_pre_push(
+            source_repo,
+            source_log,
+            f"refs/heads/main {source_head} refs/heads/feat/from-main {ZERO_OID}\n",
+        )
+        expect_push_rejected(
+            "source-main push",
+            source_completed,
+            source_log,
+            "Refusing push from main (refs/heads/main -> refs/heads/feat/from-main). Use a feature branch.",
+        )
+
         runtime_repo = init_repo(temp_root_path / "runtime")
         run(["git", "checkout", "-qb", "feat/runtime"], cwd=runtime_repo)
         run(["git", "branch", "--set-upstream-to=main"], cwd=runtime_repo)
@@ -159,6 +178,25 @@ def write_text(path: Path, content: str) -> None:
 def expect_equal(label: str, actual: object, expected: object) -> None:
     if actual != expected:
         raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
+
+
+def expect_push_rejected(
+    label: str,
+    completed: subprocess.CompletedProcess[str],
+    log_path: Path,
+    message: str,
+) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: push should fail")
+    if log_path.exists():
+        raise AssertionError(f"{label}: hook should fail before invoking make: {log_path.read_text(encoding='utf-8')!r}")
+    output = combined_output(completed)
+    if message not in output:
+        raise AssertionError(f"{label}: missing rejection message {message!r} in {output!r}")
+
+
+def combined_output(completed: subprocess.CompletedProcess[str]) -> str:
+    return completed.stdout + completed.stderr
 
 
 def sandbox_env() -> dict[str, str]:

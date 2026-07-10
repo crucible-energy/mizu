@@ -58,6 +58,10 @@ if [[ ! -t 0 ]]; then
       echo "Refusing push to main (${local_ref} -> ${remote_ref}). Use a feature branch." >&2
       exit 2
     fi
+    if [[ "$local_ref" == "refs/heads/main" && "$allow_main_push" != "1" ]]; then
+      echo "Refusing push from main (${local_ref} -> ${remote_ref}). Use a feature branch." >&2
+      exit 2
+    fi
   done
 fi
 

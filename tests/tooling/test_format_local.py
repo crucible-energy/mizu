@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 import subprocess
 import sys
@@ -164,6 +165,7 @@ def run_completed(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=sandbox_env(),
     )
     return completed
 
@@ -181,12 +183,19 @@ def git_show(cwd: Path, path: str) -> str:
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=sandbox_env(),
     )
     if completed.returncode != 0:
         print(completed.stdout)
         print(completed.stderr, file=sys.stderr)
         raise SystemExit(completed.returncode)
     return completed.stdout
+
+
+def sandbox_env() -> dict[str, str]:
+    # Git hooks can export GIT_DIR/GIT_WORK_TREE for the outer repository.
+    # Strip all inherited Git context so temp-repo subprocesses stay sandboxed.
+    return {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
 
 
 if __name__ == "__main__":

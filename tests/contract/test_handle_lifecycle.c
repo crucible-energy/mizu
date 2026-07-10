@@ -14,11 +14,21 @@ static int expect_status(const char *label, mizu_status_code_t actual, mizu_stat
     return 1;
 }
 
+static int expect_true(const char *label, int condition) {
+    if (!condition) {
+        fprintf(stderr, "%s\n", label);
+        return 0;
+    }
+    return 1;
+}
+
 int main(void) {
     mizu_runtime_t *runtime = NULL;
     mizu_runtime_t *runtime_reuse = NULL;
+    mizu_model_t *failed_model = NULL;
     mizu_model_t *model = NULL;
     mizu_model_t *model_reuse = NULL;
+    mizu_session_t *failed_session = NULL;
     mizu_session_t *session = NULL;
     mizu_session_t *session_reuse = NULL;
     mizu_status_code_t status;
@@ -112,6 +122,10 @@ int main(void) {
 
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;
+    failed_session = session_reuse;
+    status = mizu_session_open(model, &session_config, &failed_session);
+    if (!expect_status("session open should reject closed model", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed session open should clear output handle", failed_session == NULL)) return 1;
     status = mizu_model_open(runtime, &model_config, &model_reuse);
     if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_get_info(model, &model_info);
@@ -126,6 +140,10 @@ int main(void) {
 
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    failed_model = model_reuse;
+    status = mizu_model_open(runtime, &model_config, &failed_model);
+    if (!expect_status("model open should reject destroyed runtime", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed model open should clear output handle", failed_model == NULL)) return 1;
     status = mizu_runtime_create(&runtime_config, &runtime_reuse);
     if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
     status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);

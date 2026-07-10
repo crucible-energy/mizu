@@ -477,11 +477,15 @@ def align_offset(offset: int, alignment: int) -> int:
 def classify_tensor_role(name: str, source_kind: str, general_type: str) -> str:
     lowered = name.lower()
     if source_kind == "projector" or general_type == "mmproj":
-        if lowered.startswith("mm.") or "projector" in lowered or "merger" in lowered:
+        if is_projector_tensor_name(lowered):
             return "multimodal_projector"
-        if lowered.startswith("v.") or "vision" in lowered or "patch" in lowered or "position" in lowered:
+        if is_vision_tensor_name(lowered):
             return "vision_encoder"
         return "multimodal_projector"
+    if is_projector_tensor_name(lowered):
+        return "multimodal_projector"
+    if is_vision_tensor_name(lowered):
+        return "vision_encoder"
     if "token_embd" in lowered or "embed_tokens" in lowered or "embedding" in lowered:
         return "embedding_table"
     if lowered == "output.weight" or "lm_head" in lowered or "output_projection" in lowered:
@@ -493,6 +497,19 @@ def classify_tensor_role(name: str, source_kind: str, general_type: str) -> str:
     if "attn_" in lowered or "ffn_" in lowered or "ssm_" in lowered:
         return "decoder_stack"
     return "model_tensor"
+
+
+def is_projector_tensor_name(lowered_name: str) -> bool:
+    return lowered_name.startswith("mm.") or "projector" in lowered_name or "merger" in lowered_name
+
+
+def is_vision_tensor_name(lowered_name: str) -> bool:
+    return (
+        lowered_name.startswith("v.")
+        or "vision" in lowered_name
+        or "patch" in lowered_name
+        or "position" in lowered_name
+    )
 
 
 def is_projector_side_role(role_name: str) -> bool:

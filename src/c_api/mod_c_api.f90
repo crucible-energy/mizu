@@ -1874,7 +1874,7 @@ contains
 
   subroutine resolve_output_handle_slot(slot_ptr_ptr, slot_ptr, status_code)
     type(c_ptr), value        :: slot_ptr_ptr
-    type(c_ptr), pointer      :: slot_ptr
+    type(c_ptr), pointer, intent(out) :: slot_ptr
     integer(i32), intent(out) :: status_code
 
     nullify(slot_ptr)

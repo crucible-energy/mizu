@@ -39,6 +39,8 @@ int main(void) {
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
     mizu_model_info_t model_info_reuse;
+    mizu_execution_report_t model_report;
+    mizu_execution_report_t session_report;
     size_t required_bytes = 0;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -87,6 +89,9 @@ int main(void) {
     if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("model remains valid after busy runtime destroy", status, MIZU_STATUS_OK)) return 1;
+    model_report.struct_size = sizeof(model_report);
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("model report after open", status, MIZU_STATUS_OK)) return 1;
 
     session_config.struct_size = sizeof(session_config);
     session_config.abi_version = mizu_get_abi_version();
@@ -110,8 +115,48 @@ int main(void) {
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_open(model, &session_config, &session_reuse);
     if (!expect_status("session reopen", status, MIZU_STATUS_OK)) return 1;
+    session_info.struct_size = sizeof(session_info);
+    session_info.session_state_flags = UINT64_C(9);
+    session_info.kv_token_count = 9;
+    session_info.staged_token_count = 9;
+    session_info.staged_modal_count = 9;
+    session_info.reserved_u32 = 9;
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("closed session get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session get info should preserve struct size", session_info.struct_size == sizeof(session_info))) {
+        return 1;
+    }
+    if (!expect_true("closed session get info should clear outputs",
+                     session_info.session_state_flags == 0 &&
+                     session_info.kv_token_count == 0 &&
+                     session_info.staged_token_count == 0 &&
+                     session_info.staged_modal_count == 0 &&
+                     session_info.reserved_u32 == 0)) return 1;
+    session_report.struct_size = sizeof(session_report);
+    session_report.stage_kind = MIZU_STAGE_DECODE;
+    session_report.backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    session_report.execution_route = MIZU_EXEC_ROUTE_ANE;
+    session_report.plan_id = 9;
+    session_report.selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    session_report.cold_state = MIZU_COLD_STATE_WARM;
+    session_report.fallback_reason = MIZU_FALLBACK_REASON_UNSUPPORTED_OP;
+    session_report.cache_flags = UINT64_C(9);
+    session_report.elapsed_us = UINT64_C(9);
+    status = mizu_session_get_last_report(session, &session_report);
+    if (!expect_status("closed session get last report", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed session report should preserve struct size", session_report.struct_size == sizeof(session_report))) {
+        return 1;
+    }
+    if (!expect_true("closed session report should clear outputs",
+                     session_report.stage_kind == 0 &&
+                     session_report.backend_family == 0 &&
+                     session_report.execution_route == 0 &&
+                     session_report.plan_id == 0 &&
+                     session_report.selection_mode == 0 &&
+                     session_report.cold_state == 0 &&
+                     session_report.fallback_reason == 0 &&
+                     session_report.cache_flags == 0 &&
+                     session_report.elapsed_us == 0)) return 1;
     status = mizu_session_close(session);
     if (!expect_status("double session close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     session_info_reuse.struct_size = sizeof(session_info_reuse);
@@ -128,8 +173,48 @@ int main(void) {
     if (!expect_true("failed session open should clear output handle", failed_session == NULL)) return 1;
     status = mizu_model_open(runtime, &model_config, &model_reuse);
     if (!expect_status("model reopen", status, MIZU_STATUS_OK)) return 1;
+    model_info.struct_size = sizeof(model_info);
+    model_info.model_family = MIZU_MODEL_FAMILY_GEMMA4;
+    model_info.allowed_backend_mask = MIZU_BACKEND_MASK_CUDA;
+    model_info.model_features = MIZU_MODEL_FEATURE_PROJECTOR;
+    model_info.projector_slot_count = 9;
+    model_info.reserved_u32 = 9;
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("closed model get info", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed model get info should preserve struct size", model_info.struct_size == sizeof(model_info))) {
+        return 1;
+    }
+    if (!expect_true("closed model get info should clear outputs",
+                     model_info.model_family == 0 &&
+                     model_info.allowed_backend_mask == 0 &&
+                     model_info.model_features == 0 &&
+                     model_info.projector_slot_count == 0 &&
+                     model_info.reserved_u32 == 0)) return 1;
+    model_report.struct_size = sizeof(model_report);
+    model_report.stage_kind = MIZU_STAGE_MODEL_LOAD;
+    model_report.backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    model_report.execution_route = MIZU_EXEC_ROUTE_ANE;
+    model_report.plan_id = 9;
+    model_report.selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    model_report.cold_state = MIZU_COLD_STATE_COLD;
+    model_report.fallback_reason = MIZU_FALLBACK_REASON_BACKEND_UNAVAILABLE;
+    model_report.cache_flags = UINT64_C(9);
+    model_report.elapsed_us = UINT64_C(9);
+    status = mizu_model_get_last_report(model, &model_report);
+    if (!expect_status("closed model get last report", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("closed model report should preserve struct size", model_report.struct_size == sizeof(model_report))) {
+        return 1;
+    }
+    if (!expect_true("closed model report should clear outputs",
+                     model_report.stage_kind == 0 &&
+                     model_report.backend_family == 0 &&
+                     model_report.execution_route == 0 &&
+                     model_report.plan_id == 0 &&
+                     model_report.selection_mode == 0 &&
+                     model_report.cold_state == 0 &&
+                     model_report.fallback_reason == 0 &&
+                     model_report.cache_flags == 0 &&
+                     model_report.elapsed_us == 0)) return 1;
     status = mizu_model_close(model);
     if (!expect_status("double model close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     model_info_reuse.struct_size = sizeof(model_info_reuse);
@@ -146,8 +231,10 @@ int main(void) {
     if (!expect_true("failed model open should clear output handle", failed_model == NULL)) return 1;
     status = mizu_runtime_create(&runtime_config, &runtime_reuse);
     if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
+    required_bytes = 9;
     status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);
     if (!expect_status("destroyed runtime copy last error", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("destroyed runtime copy last error should clear required size", required_bytes == 0)) return 1;
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("double runtime destroy", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_runtime_destroy(runtime_reuse);

@@ -245,6 +245,55 @@ def main() -> int:
             "mm.0.weight|weights/qwen35_integrated.gguf|offset=384|ggml_type=f16",
         )
 
+        decoder_position_model = temp_path / "decoder-position.gguf"
+        decoder_position_output = temp_path / "decoder_position_mizu"
+        write_gguf(
+            decoder_position_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Decoder Position Qwen3.5"),
+                "general.type": ("string", "model"),
+                "general.file_type": ("uint32", 15),
+                "general.quantization_version": ("uint32", 2),
+            },
+            [
+                ("token_embd.weight", [4096, 248320], "Q4_K", 0),
+                ("position_embd.weight", [4096, 4096], "F16", 128),
+                ("output.weight", [4096, 248320], "Q4_K", 256),
+            ],
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(decoder_position_model),
+                "--output-root",
+                str(decoder_position_output),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if completed.returncode != 0:
+            print(completed.stdout)
+            print(completed.stderr, file=sys.stderr)
+            return completed.returncode
+
+        expect_file_contains(decoder_position_output / "manifest.mizu", "projector_present = false")
+        expect_file_contains(
+            decoder_position_output / "mizu_import" / "tensors.tsv",
+            "position_embd.weight|model_tensor|f16|row_major|weights/decoder-position.gguf|4096x4096|f16",
+        )
+        expect_file_contains(decoder_position_output / "mizu_import" / "projector.mizu", "present = false")
+        expect_file_contains(
+            decoder_position_output / "mizu_import" / "projector" / "projector_assets.mizu",
+            "# no projector-like tensors were detected",
+        )
+
         broken_model = temp_path / "broken-offset.gguf"
         write_gguf(
             broken_model,

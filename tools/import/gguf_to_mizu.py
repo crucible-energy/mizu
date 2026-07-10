@@ -479,7 +479,7 @@ def classify_tensor_role(name: str, source_kind: str, general_type: str) -> str:
     if source_kind == "projector" or general_type == "mmproj":
         if is_projector_tensor_name(lowered):
             return "multimodal_projector"
-        if is_vision_tensor_name(lowered):
+        if is_vision_tensor_name(lowered, allow_broad_match=True):
             return "vision_encoder"
         return "multimodal_projector"
     if is_projector_tensor_name(lowered):
@@ -503,13 +503,12 @@ def is_projector_tensor_name(lowered_name: str) -> bool:
     return lowered_name.startswith("mm.") or "projector" in lowered_name or "merger" in lowered_name
 
 
-def is_vision_tensor_name(lowered_name: str) -> bool:
-    return (
-        lowered_name.startswith("v.")
-        or "vision" in lowered_name
-        or "patch" in lowered_name
-        or "position" in lowered_name
-    )
+def is_vision_tensor_name(lowered_name: str, *, allow_broad_match: bool = False) -> bool:
+    if lowered_name.startswith("v.") or "vision" in lowered_name:
+        return True
+    if not allow_broad_match:
+        return False
+    return "patch" in lowered_name or "position" in lowered_name
 
 
 def is_projector_side_role(role_name: str) -> bool:

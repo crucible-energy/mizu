@@ -383,6 +383,7 @@ contains
     integer(i32)                :: status_code
     integer(i64)                :: required_len
 
+    call write_size_t_pointer(out_required_ptr, 0_i64)
     call resolve_runtime_handle(runtime_ptr, box, runtime, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_runtime_copy_last_error = int(status_code, kind=c_int32_t)
@@ -563,12 +564,6 @@ contains
     type(c_model_info), pointer :: c_info
     integer(i32) :: status_code
 
-    call resolve_model_handle(model_ptr, box, model, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_model_get_info = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     if (.not. c_associated(out_info_ptr)) then
       mizu_model_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
@@ -581,6 +576,13 @@ contains
     end if
 
     status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_model_get_info = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_model_info_output(c_info)
+    call resolve_model_handle(model_ptr, box, model, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_model_get_info = int(status_code, kind=c_int32_t)
       return
@@ -604,12 +606,6 @@ contains
     type(c_execution_report), pointer :: c_report
     integer(i32) :: status_code
 
-    call resolve_model_handle(model_ptr, box, model, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_model_get_last_report = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     if (.not. c_associated(out_report_ptr)) then
       mizu_model_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
@@ -622,6 +618,13 @@ contains
     end if
 
     status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_model_get_last_report = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_execution_report_output(c_report)
+    call resolve_model_handle(model_ptr, box, model, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_model_get_last_report = int(status_code, kind=c_int32_t)
       return
@@ -906,12 +909,6 @@ contains
     type(session_info)            :: info
     integer(i32) :: status_code
 
-    call resolve_session_handle(session_ptr, box, session, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_session_get_info = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     if (.not. c_associated(out_info_ptr)) then
       mizu_session_get_info = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
@@ -924,6 +921,13 @@ contains
     end if
 
     status_code = require_output_struct_size(c_info%struct_size, c_sizeof(c_info))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_get_info = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_session_info_output(c_info)
+    call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_get_info = int(status_code, kind=c_int32_t)
       return
@@ -1589,12 +1593,6 @@ contains
     type(c_execution_report), pointer :: c_report
     integer(i32) :: status_code
 
-    call resolve_session_handle(session_ptr, box, session, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_session_get_last_report = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     if (.not. c_associated(out_report_ptr)) then
       mizu_session_get_last_report = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
       return
@@ -1607,6 +1605,13 @@ contains
     end if
 
     status_code = require_output_struct_size(c_report%struct_size, c_sizeof(c_report))
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_get_last_report = int(status_code, kind=c_int32_t)
+      return
+    end if
+
+    call clear_execution_report_output(c_report)
+    call resolve_session_handle(session_ptr, box, session, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_get_last_report = int(status_code, kind=c_int32_t)
       return
@@ -1891,6 +1896,40 @@ contains
 
     status_code = MIZU_STATUS_OK
   end subroutine resolve_output_handle_slot
+
+  subroutine clear_model_info_output(c_info)
+    type(c_model_info), pointer, intent(inout) :: c_info
+
+    c_info%model_family = 0_c_int32_t
+    c_info%allowed_backend_mask = 0_c_int64_t
+    c_info%model_features = 0_c_int64_t
+    c_info%projector_slot_count = 0_c_int32_t
+    c_info%reserved_u32 = 0_c_int32_t
+  end subroutine clear_model_info_output
+
+  subroutine clear_session_info_output(c_info)
+    type(c_session_info), pointer, intent(inout) :: c_info
+
+    c_info%session_state_flags = 0_c_int64_t
+    c_info%kv_token_count = 0_c_int64_t
+    c_info%staged_token_count = 0_c_int64_t
+    c_info%staged_modal_count = 0_c_int32_t
+    c_info%reserved_u32 = 0_c_int32_t
+  end subroutine clear_session_info_output
+
+  subroutine clear_execution_report_output(c_report)
+    type(c_execution_report), pointer, intent(inout) :: c_report
+
+    c_report%stage_kind = 0_c_int32_t
+    c_report%backend_family = 0_c_int32_t
+    c_report%execution_route = 0_c_int32_t
+    c_report%plan_id = 0_c_int64_t
+    c_report%selection_mode = 0_c_int32_t
+    c_report%cold_state = 0_c_int32_t
+    c_report%fallback_reason = 0_c_int32_t
+    c_report%cache_flags = 0_c_int64_t
+    c_report%elapsed_us = 0_c_int64_t
+  end subroutine clear_execution_report_output
 
   integer(i64) function find_runtime_handle_slot(runtime_ptr) result(slot_id)
     type(c_ptr), value :: runtime_ptr

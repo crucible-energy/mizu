@@ -264,10 +264,11 @@ contains
     mizu_get_abi_version = int(MIZU_ABI_VERSION, kind=c_int32_t)
   end function mizu_get_abi_version
 
-  integer(c_int32_t) function mizu_runtime_create(config_ptr, out_runtime_ptr) &
+  integer(c_int32_t) function mizu_runtime_create(config_ptr, out_runtime_ptr_ptr) &
       bind(c, name="mizu_runtime_create")
     type(c_ptr), value :: config_ptr
-    type(c_ptr)        :: out_runtime_ptr
+    type(c_ptr), value :: out_runtime_ptr_ptr
+    type(c_ptr), pointer :: out_runtime_ptr
     type(c_runtime_config), pointer :: c_config
     type(runtime_box), pointer      :: box
     type(runtime_config)            :: config
@@ -275,6 +276,11 @@ contains
     integer(i32)                    :: status_code
     integer(i64)                    :: slot_id
 
+    call resolve_output_handle_slot(out_runtime_ptr_ptr, out_runtime_ptr, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_runtime_create = int(status_code, kind=c_int32_t)
+      return
+    end if
     out_runtime_ptr = c_null_ptr
 
     if (.not. c_associated(config_ptr)) then
@@ -390,11 +396,12 @@ contains
     mizu_runtime_copy_last_error = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_runtime_copy_last_error
 
-  integer(c_int32_t) function mizu_model_open(runtime_ptr, config_ptr, out_model_ptr) &
+  integer(c_int32_t) function mizu_model_open(runtime_ptr, config_ptr, out_model_ptr_ptr) &
       bind(c, name="mizu_model_open")
     type(c_ptr), value :: runtime_ptr
     type(c_ptr), value :: config_ptr
-    type(c_ptr)        :: out_model_ptr
+    type(c_ptr), value :: out_model_ptr_ptr
+    type(c_ptr), pointer :: out_model_ptr
     type(runtime_box), pointer      :: runtime_box_ptr
     type(runtime_state), pointer    :: runtime
     type(c_model_open_config), pointer :: c_config
@@ -414,13 +421,19 @@ contains
     integer(i32)                    :: status_code
     integer(i64)                    :: stage_started_us
 
-    out_model_ptr = c_null_ptr
-
     call resolve_runtime_handle(runtime_ptr, runtime_box_ptr, runtime, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_model_open = int(status_code, kind=c_int32_t)
       return
     end if
+
+    call resolve_output_handle_slot(out_model_ptr_ptr, out_model_ptr, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      call set_runtime_error(runtime, MIZU_STATUS_INVALID_ARGUMENT, "model output pointer is null")
+      mizu_model_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+    out_model_ptr = c_null_ptr
 
     if (.not. c_associated(config_ptr)) then
       call set_runtime_error(runtime, MIZU_STATUS_INVALID_ARGUMENT, "model config pointer is null")
@@ -619,11 +632,12 @@ contains
     mizu_model_get_last_report = int(MIZU_STATUS_OK, kind=c_int32_t)
   end function mizu_model_get_last_report
 
-  integer(c_int32_t) function mizu_session_open(model_ptr, config_ptr, out_session_ptr) &
+  integer(c_int32_t) function mizu_session_open(model_ptr, config_ptr, out_session_ptr_ptr) &
       bind(c, name="mizu_session_open")
     type(c_ptr), value :: model_ptr
     type(c_ptr), value :: config_ptr
-    type(c_ptr)        :: out_session_ptr
+    type(c_ptr), value :: out_session_ptr_ptr
+    type(c_ptr), pointer :: out_session_ptr
     type(model_box), pointer     :: model_box_ptr
     type(model_state), pointer   :: model
     type(c_session_config), pointer :: c_config
@@ -632,13 +646,18 @@ contains
     integer(i64)                 :: slot_id
     integer(i32)                 :: status_code
 
-    out_session_ptr = c_null_ptr
-
     call resolve_model_handle(model_ptr, model_box_ptr, model, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_open = int(status_code, kind=c_int32_t)
       return
     end if
+
+    call resolve_output_handle_slot(out_session_ptr_ptr, out_session_ptr, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+    out_session_ptr = c_null_ptr
 
     if (.not. c_associated(config_ptr)) then
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
@@ -1853,6 +1872,26 @@ contains
     session => session_registry(slot_id)
     status_code = MIZU_STATUS_OK
   end subroutine resolve_session_handle
+
+  subroutine resolve_output_handle_slot(slot_ptr_ptr, slot_ptr, status_code)
+    type(c_ptr), value        :: slot_ptr_ptr
+    type(c_ptr), pointer      :: slot_ptr
+    integer(i32), intent(out) :: status_code
+
+    nullify(slot_ptr)
+    if (.not. c_associated(slot_ptr_ptr)) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+
+    call c_f_pointer(slot_ptr_ptr, slot_ptr)
+    if (.not. associated(slot_ptr)) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+
+    status_code = MIZU_STATUS_OK
+  end subroutine resolve_output_handle_slot
 
   integer(i64) function find_runtime_handle_slot(runtime_ptr) result(slot_id)
     type(c_ptr), value :: runtime_ptr

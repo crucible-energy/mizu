@@ -70,6 +70,9 @@ int main(void) {
     runtime_config.optimization_mode = MIZU_OPTIMIZATION_MODE_DISABLED;
     runtime_config.runtime_flags = MIZU_RUNTIME_FLAG_NONE;
 
+    status = mizu_runtime_create(&runtime_config, NULL);
+    if (!expect_status("runtime create should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
     bad_runtime_config = runtime_config;
     bad_runtime_config.struct_size = sizeof(bad_runtime_config) - 1;
     status = mizu_runtime_create(&bad_runtime_config, &bad_runtime);
@@ -84,6 +87,9 @@ int main(void) {
     model_config.model_root_z = "tests/fixtures/models/fixture_mm_tiny";
     model_config.allowed_backend_mask = MIZU_BACKEND_MASK_APPLE_ANE;
     model_config.model_flags = MIZU_MODEL_FLAG_NONE;
+
+    status = mizu_model_open(runtime, &model_config, NULL);
+    if (!expect_status("model open should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     bad_model_config = model_config;
     bad_model_config.struct_size = sizeof(bad_model_config) - 1;
@@ -101,6 +107,12 @@ int main(void) {
     session_config.sampler_kind = MIZU_SAMPLER_KIND_GREEDY;
     session_config.session_flags = MIZU_SESSION_FLAG_NONE;
 
+    status = mizu_model_get_info(model, NULL);
+    if (!expect_status("model info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    status = mizu_session_open(model, &session_config, NULL);
+    if (!expect_status("session open should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
     bad_session_config = session_config;
     bad_session_config.struct_size = sizeof(bad_session_config) - 1;
     status = mizu_session_open(model, &bad_session_config, &bad_session);
@@ -108,6 +120,9 @@ int main(void) {
 
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_get_info(session, NULL);
+    if (!expect_status("session info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     memset(&model_info, 0, sizeof(model_info));
     model_info.struct_size = sizeof(model_info) - 1;

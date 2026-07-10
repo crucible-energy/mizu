@@ -89,6 +89,9 @@ def main() -> int:
             "artifact_path = projector/projector_assets.mizu",
         )
         tensor_inventory = (source_root / "mizu_import" / "tensors.tsv").read_text(encoding="utf-8")
+        projector_inventory = (source_root / "mizu_import" / "projector" / "projector_assets.mizu").read_text(
+            encoding="utf-8"
+        )
         expect_contains(tensor_inventory, "model.embed_tokens.weight|embedding_table|bf16|row_major")
         expect_contains(
             tensor_inventory,
@@ -101,6 +104,12 @@ def main() -> int:
             "vision_tower.vision_model.embeddings.class_embedding|vision_encoder|f16|vector",
         )
         expect_contains(tensor_inventory, "visual.merger.mlp.0.weight|multimodal_projector|f16|packed")
+        expect_contains(projector_inventory, "visual.position_embedding.weight|weights/model-00002-of-00002.safetensors")
+        expect_contains(
+            projector_inventory,
+            "vision_tower.vision_model.embeddings.class_embedding|weights/model-00002-of-00002.safetensors",
+        )
+        expect_contains(projector_inventory, "visual.merger.mlp.0.weight|weights/model-00002-of-00002.safetensors")
         expect_path_exists(source_root / "mizu_import" / "weights" / "model-00001-of-00002.safetensors")
         expect_path_exists(source_root / "mizu_import" / "weights" / "model-00002-of-00002.safetensors")
 

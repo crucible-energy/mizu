@@ -119,7 +119,7 @@ def build_bundle(model_root: Path, output_root: Path, args: argparse.Namespace) 
     source_revision = resolve_source_revision(args.source_revision, config)
     tokenizer_name = resolve_tokenizer_name(tokenizer_config, config, family)
     source_hash_text = build_source_hash_text(source_model_id, source_revision, tensors)
-    projector_tensors = [tensor for tensor in tensors if tensor["role"] == "multimodal_projector"]
+    projector_tensors = [tensor for tensor in tensors if is_projector_side_role(tensor["role"])]
     has_projector = bool(projector_tensors) or config_indicates_projector(config)
     projector_revision = stable_positive_i64(source_hash_text + ":projector")
 
@@ -287,6 +287,10 @@ def is_vision_tensor_name(lowered_name: str) -> bool:
         or lowered_name.startswith("image_tower.")
         or ".image_tower." in lowered_name
     )
+
+
+def is_projector_side_role(role_name: str) -> bool:
+    return role_name in {"multimodal_projector", "vision_encoder"}
 
 
 def infer_layout_name(role: str, shape: list[int]) -> str:

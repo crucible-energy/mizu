@@ -421,19 +421,18 @@ contains
     integer(i32)                    :: status_code
     integer(i64)                    :: stage_started_us
 
+    call resolve_output_handle_slot(out_model_ptr_ptr, out_model_ptr, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_model_open = int(status_code, kind=c_int32_t)
+      return
+    end if
+    out_model_ptr = c_null_ptr
+
     call resolve_runtime_handle(runtime_ptr, runtime_box_ptr, runtime, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_model_open = int(status_code, kind=c_int32_t)
       return
     end if
-
-    call resolve_output_handle_slot(out_model_ptr_ptr, out_model_ptr, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      call set_runtime_error(runtime, MIZU_STATUS_INVALID_ARGUMENT, "model output pointer is null")
-      mizu_model_open = int(status_code, kind=c_int32_t)
-      return
-    end if
-    out_model_ptr = c_null_ptr
 
     if (.not. c_associated(config_ptr)) then
       call set_runtime_error(runtime, MIZU_STATUS_INVALID_ARGUMENT, "model config pointer is null")
@@ -646,18 +645,18 @@ contains
     integer(i64)                 :: slot_id
     integer(i32)                 :: status_code
 
-    call resolve_model_handle(model_ptr, model_box_ptr, model, status_code)
-    if (status_code /= MIZU_STATUS_OK) then
-      mizu_session_open = int(status_code, kind=c_int32_t)
-      return
-    end if
-
     call resolve_output_handle_slot(out_session_ptr_ptr, out_session_ptr, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_open = int(status_code, kind=c_int32_t)
       return
     end if
     out_session_ptr = c_null_ptr
+
+    call resolve_model_handle(model_ptr, model_box_ptr, model, status_code)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_open = int(status_code, kind=c_int32_t)
+      return
+    end if
 
     if (.not. c_associated(config_ptr)) then
       mizu_session_open = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)

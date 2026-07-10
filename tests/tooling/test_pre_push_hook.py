@@ -43,6 +43,28 @@ def main() -> int:
         )
         fake_make_path.chmod(0o755)
 
+        write_text(repo_root / "README.md", "Current main-only change.\n")
+        run(["git", "add", "README.md"], cwd=repo_root)
+        run(["git", "commit", "-qm", "main-only"], cwd=repo_root)
+
+        main_push_log = temp_root_path / "main-push-make.log"
+        main_push_completed = git_push(repo_root, fake_make_dir, main_push_log, "main")
+        expect_push_rejected(
+            "main push",
+            main_push_completed,
+            main_push_log,
+            "Refusing push to main (refs/heads/main -> refs/heads/main). Use a feature branch.",
+        )
+
+        main_source_log = temp_root_path / "main-source-make.log"
+        main_source_completed = git_push(repo_root, fake_make_dir, main_source_log, "main:feat/from-main")
+        expect_push_rejected(
+            "main source push",
+            main_source_completed,
+            main_source_log,
+            "Refusing to validate a direct main push. Use a feature branch.",
+        )
+
         run(["git", "checkout", "-qb", "feat/docs-only"], cwd=repo_root)
         run(["git", "branch", "--set-upstream-to=main"], cwd=repo_root)
         write_text(repo_root / "README.md", "Current docs change.\n")
@@ -174,6 +196,21 @@ def write_text(path: Path, content: str) -> None:
 def expect_equal(label: str, actual: object, expected: object) -> None:
     if actual != expected:
         raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
+
+
+def expect_push_rejected(
+    label: str,
+    completed: subprocess.CompletedProcess[str],
+    log_path: Path,
+    message: str,
+) -> None:
+    if completed.returncode == 0:
+        raise AssertionError(f"{label}: push should fail")
+    if log_path.exists():
+        raise AssertionError(f"{label}: hook should fail before invoking make: {log_path.read_text(encoding='utf-8')!r}")
+    output = combined_output(completed)
+    if message not in output:
+        raise AssertionError(f"{label}: missing rejection message {message!r} in {output!r}")
 
 
 def combined_output(completed: subprocess.CompletedProcess[str]) -> str:

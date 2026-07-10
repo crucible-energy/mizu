@@ -42,6 +42,8 @@ def main() -> int:
             {
                 "model.norm.weight": ("F32", [32]),
                 "lm_head.weight": ("BF16", [32, 64]),
+                "visual.position_embedding.weight": ("F16", [32, 16]),
+                "vision_tower.vision_model.embeddings.class_embedding": ("F16", [16]),
                 "visual.merger.mlp.0.weight": ("F16", [16, 32]),
             },
         )
@@ -53,6 +55,8 @@ def main() -> int:
                     "model.layers.0.self_attn.q_proj.weight": "model-00001-of-00002.safetensors",
                     "model.norm.weight": "model-00002-of-00002.safetensors",
                     "lm_head.weight": "model-00002-of-00002.safetensors",
+                    "visual.position_embedding.weight": "model-00002-of-00002.safetensors",
+                    "vision_tower.vision_model.embeddings.class_embedding": "model-00002-of-00002.safetensors",
                     "visual.merger.mlp.0.weight": "model-00002-of-00002.safetensors",
                 }
             },
@@ -91,6 +95,11 @@ def main() -> int:
             "model.layers.0.self_attn.q_proj.weight|decoder_stack|bf16|packed|weights/model-00001-of-00002.safetensors|32x32|bf16",
         )
         expect_contains(tensor_inventory, "lm_head.weight|token_projection|bf16|row_major")
+        expect_contains(tensor_inventory, "visual.position_embedding.weight|vision_encoder|f16|packed")
+        expect_contains(
+            tensor_inventory,
+            "vision_tower.vision_model.embeddings.class_embedding|vision_encoder|f16|vector",
+        )
         expect_contains(tensor_inventory, "visual.merger.mlp.0.weight|multimodal_projector|f16|packed")
         expect_path_exists(source_root / "mizu_import" / "weights" / "model-00001-of-00002.safetensors")
         expect_path_exists(source_root / "mizu_import" / "weights" / "model-00002-of-00002.safetensors")

@@ -256,21 +256,37 @@ def product(values: list[int]) -> int:
 
 def classify_tensor_role(name: str) -> str:
     lowered = name.lower()
-    if "embed_tokens" in lowered or "token_embedding" in lowered or "embedding" in lowered:
-        return "embedding_table"
-    if "lm_head" in lowered or "output_projection" in lowered:
-        return "token_projection"
     if "mm_projector" in lowered or "multi_modal_projector" in lowered:
         return "multimodal_projector"
     if "projector" in lowered or "visual.merger" in lowered or "vision_projector" in lowered:
         return "multimodal_projector"
-    if "vision" in lowered or lowered.startswith("visual.") or ".visual." in lowered:
+    if is_vision_tensor_name(lowered):
         return "vision_encoder"
+    if "embed_tokens" in lowered or "token_embedding" in lowered or "token_embd" in lowered:
+        return "embedding_table"
+    if lowered.endswith("lm_head.weight") or lowered == "output.weight" or "output_projection" in lowered:
+        return "token_projection"
     if "norm" in lowered:
         return "normalization"
-    if ".layers." in lowered or ".blocks." in lowered or "decoder" in lowered:
+    if ".layers." in lowered or ".blocks." in lowered or lowered.startswith("blk.") or ".blk." in lowered:
+        return "decoder_stack"
+    if "decoder" in lowered or "self_attn" in lowered or ".mlp." in lowered or "attn_" in lowered or "ffn_" in lowered:
         return "decoder_stack"
     return "model_tensor"
+
+
+def is_vision_tensor_name(lowered_name: str) -> bool:
+    return (
+        "vision" in lowered_name
+        or lowered_name.startswith("visual.")
+        or ".visual." in lowered_name
+        or lowered_name.startswith("vision_tower.")
+        or ".vision_tower." in lowered_name
+        or lowered_name.startswith("vision_model.")
+        or ".vision_model." in lowered_name
+        or lowered_name.startswith("image_tower.")
+        or ".image_tower." in lowered_name
+    )
 
 
 def infer_layout_name(role: str, shape: list[int]) -> str:

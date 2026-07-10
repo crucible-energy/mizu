@@ -188,6 +188,63 @@ def main() -> int:
             "token_embd.weight|embedding_table|f16|row_major|weights/gemma4.gguf|2816x262144|q5_k",
         )
 
+        integrated_qwen_model = temp_path / "qwen35_integrated.gguf"
+        integrated_qwen_output = temp_path / "qwen35_integrated_mizu"
+        write_gguf(
+            integrated_qwen_model,
+            {
+                "general.architecture": ("string", "qwen35"),
+                "general.name": ("string", "Qwen3.5 9B Integrated"),
+                "general.type": ("string", "model"),
+                "general.file_type": ("uint32", 15),
+                "general.quantization_version": ("uint32", 2),
+            },
+            [
+                ("token_embd.weight", [4096, 248320], "Q4_K", 0),
+                ("blk.0.attn_qkv.weight", [4096, 8192], "Q5_K", 128),
+                ("v.blk.0.attn_qkv.weight", [1152, 3456], "F16", 256),
+                ("mm.0.weight", [1152, 4096], "F16", 384),
+            ],
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IMPORTER),
+                str(integrated_qwen_model),
+                "--output-root",
+                str(integrated_qwen_output),
+                "--link-mode",
+                "copy",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if completed.returncode != 0:
+            print(completed.stdout)
+            print(completed.stderr, file=sys.stderr)
+            return completed.returncode
+
+        expect_file_contains(integrated_qwen_output / "manifest.mizu", "projector_present = true")
+        expect_file_contains(
+            integrated_qwen_output / "mizu_import" / "tensors.tsv",
+            "v.blk.0.attn_qkv.weight|vision_encoder|f16|packed|weights/qwen35_integrated.gguf|1152x3456|f16",
+        )
+        expect_file_contains(
+            integrated_qwen_output / "mizu_import" / "tensors.tsv",
+            "mm.0.weight|multimodal_projector|f16|packed|weights/qwen35_integrated.gguf|1152x4096|f16",
+        )
+        expect_file_contains(
+            integrated_qwen_output / "mizu_import" / "projector" / "projector_assets.mizu",
+            "v.blk.0.attn_qkv.weight|weights/qwen35_integrated.gguf|offset=256|ggml_type=f16",
+        )
+        expect_file_contains(
+            integrated_qwen_output / "mizu_import" / "projector" / "projector_assets.mizu",
+            "mm.0.weight|weights/qwen35_integrated.gguf|offset=384|ggml_type=f16",
+        )
+
         broken_model = temp_path / "broken-offset.gguf"
         write_gguf(
             broken_model,

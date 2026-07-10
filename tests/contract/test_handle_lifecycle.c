@@ -47,6 +47,13 @@ int main(void) {
         return 1;
     }
 
+    status = mizu_runtime_destroy(NULL);
+    if (!expect_status("runtime destroy null", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_model_close(NULL);
+    if (!expect_status("model close null", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_close(NULL);
+    if (!expect_status("session close null", status, MIZU_STATUS_OK)) return 1;
+
     runtime_config.struct_size = sizeof(runtime_config);
     runtime_config.abi_version = mizu_get_abi_version();
     runtime_config.cache_root_z = NULL;
@@ -65,6 +72,11 @@ int main(void) {
 
     status = mizu_model_open(runtime, &model_config, &model);
     if (!expect_status("model open", status, MIZU_STATUS_OK)) return 1;
+    model_info.struct_size = sizeof(model_info);
+    status = mizu_runtime_destroy(runtime);
+    if (!expect_status("runtime destroy with live model", status, MIZU_STATUS_BUSY)) return 1;
+    status = mizu_model_get_info(model, &model_info);
+    if (!expect_status("model remains valid after busy runtime destroy", status, MIZU_STATUS_OK)) return 1;
 
     session_config.struct_size = sizeof(session_config);
     session_config.abi_version = mizu_get_abi_version();
@@ -79,8 +91,11 @@ int main(void) {
 
     status = mizu_session_open(model, &session_config, &session);
     if (!expect_status("session open", status, MIZU_STATUS_OK)) return 1;
-
     session_info.struct_size = sizeof(session_info);
+    status = mizu_model_close(model);
+    if (!expect_status("model close with live session", status, MIZU_STATUS_BUSY)) return 1;
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session remains valid after busy model close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_open(model, &session_config, &session_reuse);
@@ -95,7 +110,6 @@ int main(void) {
     status = mizu_session_close(session_reuse);
     if (!expect_status("reopened session close", status, MIZU_STATUS_OK)) return 1;
 
-    model_info.struct_size = sizeof(model_info);
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;
     status = mizu_model_open(runtime, &model_config, &model_reuse);

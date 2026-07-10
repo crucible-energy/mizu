@@ -160,7 +160,12 @@ contains
     do index = 1_i32, cache%entry_count
       if (.not. session_cache_record_is_evictable(cache%entries(index))) cycle
       score = session_cache_retention_score(cache%entries(index))
-      if (candidate_index == 0_i32 .or. score < candidate_score .or. &
+      if (candidate_index <= 0_i32) then
+        candidate_index = index
+        candidate_score = score
+        cycle
+      end if
+      if (score < candidate_score .or. &
           (score == candidate_score .and. cache%entries(index)%last_access_tick < &
            cache%entries(candidate_index)%last_access_tick)) then
         candidate_index = index

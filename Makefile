@@ -10,6 +10,8 @@ CFLAGS ?= -std=c11 -Wall -Wextra
 CXXFLAGS ?= -std=c++17 -Wall -Wextra
 NVCCFLAGS ?= -std=c++17 -Iinclude -Isrc/backends/cuda
 OBJCFLAGS ?= -Wall -Wextra -fobjc-arc
+DEBUG_BUILD_DIR := build-debug
+DEBUG_FFLAGS := -std=f2018 -Wall -Wextra -fcheck=all -fbacktrace
 
 HAVE_NVCC := $(shell command -v $(NVCC) >/dev/null 2>&1 && echo 1 || echo 0)
 
@@ -98,7 +100,7 @@ TOOL_TESTS := \
 	tests/tooling/test_gguf_to_mizu.py \
 	tests/tooling/test_hf_safetensors_to_mizu.py
 
-.PHONY: all hooks format format-check check-local test unit-tests contract-tests contract-smokes tool-tests clean
+.PHONY: all hooks format format-check check-local check-debug test unit-tests contract-tests contract-smokes tool-tests clean FORCE
 
 all: test
 
@@ -114,6 +116,10 @@ format-check:
 check-local: format-check
 	git diff --check
 	$(MAKE) test
+
+check-debug:
+	rm -rf $(DEBUG_BUILD_DIR)
+	$(MAKE) BUILD_DIR=$(DEBUG_BUILD_DIR) FFLAGS="$(DEBUG_FFLAGS)" test
 
 test: unit-tests contract-tests tool-tests
 
@@ -136,6 +142,10 @@ tool-tests:
 		echo "running $$test_script"; \
 		python3 $$test_script || exit $$?; \
 	done
+
+FORCE:
+
+$(UNIT_BINS) $(CONTRACT_BINS) $(CONTRACT_SMOKES): FORCE
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

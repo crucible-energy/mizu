@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "mizu.h"
 
@@ -41,6 +42,13 @@ int main(void) {
     mizu_model_info_t model_info_reuse;
     mizu_execution_report_t model_report;
     mizu_execution_report_t session_report;
+    mizu_report_buffer_t report_buffer;
+    mizu_decode_options_t decode_options;
+    mizu_decode_result_t decode_result;
+    mizu_output_buffer_t output_buffer;
+    mizu_execution_report_t report_storage[1];
+    int32_t decoded_token = 7;
+    int32_t output_token = 7;
     size_t required_bytes = 0;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -157,6 +165,57 @@ int main(void) {
                      session_report.fallback_reason == 0 &&
                      session_report.cache_flags == 0 &&
                      session_report.elapsed_us == 0)) return 1;
+    memset(&decode_options, 0, sizeof(decode_options));
+    decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 1;
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decoded_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    report_buffer.report_count = 9;
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("closed session decode should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    if (!expect_true("closed session decode should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decoded_token &&
+                     decode_result.token_capacity == 1)) return 1;
+    if (!expect_true("closed session decode should clear result outputs",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("closed session decode should preserve report buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("closed session decode should clear report count", report_buffer.report_count == 0)) return 1;
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.data = &output_token;
+    output_buffer.byte_capacity = sizeof(output_token);
+    output_buffer.bytes_written = 9;
+    output_buffer.output_flags = UINT64_C(9);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("closed session read output should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    if (!expect_true("closed session read output should preserve inputs",
+                     output_buffer.struct_size == sizeof(output_buffer) &&
+                     output_buffer.output_kind == MIZU_OUTPUT_KIND_TOKEN_IDS &&
+                     output_buffer.data == &output_token &&
+                     output_buffer.byte_capacity == sizeof(output_token))) return 1;
+    if (!expect_true("closed session read output should clear outputs",
+                     output_buffer.bytes_written == 0 &&
+                     output_buffer.output_flags == 0)) return 1;
     status = mizu_session_close(session);
     if (!expect_status("double session close", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     session_info_reuse.struct_size = sizeof(session_info_reuse);

@@ -197,5 +197,12 @@ These suites cover the `API-C*` portion of
     distinct span hashes for multiple tensors sharing one GGUF file
   - verifies mmproj tensors are treated as projector-side lineage rather than
     decoder weight-pack entries
+- `test_integrated_gguf_cuda_artifacts.c`
+  - synthesizes one integrated multimodal GGUF locally, imports it through the
+    standard GGUF importer, and opens it through the public CUDA route
+  - verifies projector presence survives even when vision and projector tensors
+    live in the same GGUF file as decoder tensors
+  - verifies shared-file `v.*` and `mm.*` tensors are retained in projector
+    artifact lineage but excluded from decoder weight-pack artifacts
 - `test_go_binding_smoke.go`
   - reserved for the first thin Go binding smoke path

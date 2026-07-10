@@ -2666,12 +2666,14 @@ contains
   end subroutine recompute_import_weight_pack_summary
 
   subroutine append_import_lineage_payload(payload_text, payload_bytes, stage_kind, model)
-    character(len=*), intent(inout) :: payload_text
-    integer(i64), intent(out)       :: payload_bytes
-    integer(i32), intent(in)        :: stage_kind
-    type(model_state), intent(in)   :: model
+    character(len=*), intent(inout)  :: payload_text
+    integer(i64), intent(out)        :: payload_bytes
+    integer(i32), intent(in)         :: stage_kind
+    type(model_state), intent(in)    :: model
     character(len=MAX_PATH_LEN + 64) :: field_text
+    integer(i32)                     :: preview_count
     integer(i32)                     :: preview_index
+    integer(i32)                     :: tensor_index
 
     if (.not. model%has_import_bundle) then
       payload_bytes = int(len_trim(payload_text) + 1, kind=i64)
@@ -2720,20 +2722,28 @@ contains
       call append_import_weight_pack_dependency_payload(payload_text, model)
     end if
 
-    if (stage_kind == MIZU_STAGE_MODEL_LOAD .or. stage_kind == MIZU_STAGE_PROJECTOR) then
-      do preview_index = 1_i32, model%import_preview_count
+    if ((stage_kind == MIZU_STAGE_MODEL_LOAD .or. stage_kind == MIZU_STAGE_PROJECTOR) .and. &
+        allocated(model%import_tensors)) then
+      preview_count = 0_i32
+      preview_index = 0_i32
+      do tensor_index = 1_i32, int(size(model%import_tensors), kind=i32)
+        if (.not. import_tensor_matches_stage_preview(stage_kind, model%import_tensors(tensor_index))) cycle
+        preview_count = preview_count + 1_i32
+        if (preview_index >= int(size(model%import_tensor_paths), kind=i32)) cycle
+        if (len_trim(model%import_tensors(tensor_index)%source_path) == 0) cycle
+        preview_index = preview_index + 1_i32
         field_text = ""
         write(field_text, '(";tensor",I0,"=",A,"|",A,"|",A)') preview_index, &
-          trim(model%import_tensor_names(preview_index)), trim(model%import_tensor_roles(preview_index)), &
-          trim(model%import_tensor_paths(preview_index))
+          trim(model%import_tensors(tensor_index)%tensor_name), trim(model%import_tensors(tensor_index)%tensor_role), &
+          trim(model%import_tensors(tensor_index)%source_path)
         call append_payload_fragment(payload_text, trim(field_text))
       end do
-    end if
 
-    if (model%tensor_count > model%import_preview_count) then
-      field_text = ""
-      write(field_text, '(";tensor_preview=",I0,"/",I0)') model%import_preview_count, model%tensor_count
-      call append_payload_fragment(payload_text, trim(field_text))
+      if (preview_count > preview_index) then
+        field_text = ""
+        write(field_text, '(";tensor_preview=",I0,"/",I0)') preview_index, preview_count
+        call append_payload_fragment(payload_text, trim(field_text))
+      end if
     end if
 
     payload_bytes = int(len_trim(payload_text) + 1, kind=i64)
@@ -3093,6 +3103,23 @@ contains
     if (len_trim(import_tensor%source_path) == 0) return
     is_projector_tensor = (trim(import_tensor%source_path) == trim(model%import_projector_artifact_path))
   end function import_tensor_belongs_to_projector
+
+  pure logical function import_tensor_matches_stage_preview(stage_kind, import_tensor) result(include_tensor)
+    integer(i32), intent(in)              :: stage_kind
+    type(import_tensor_state), intent(in) :: import_tensor
+    character(len=MAX_NAME_LEN)           :: tensor_role
+
+    tensor_role = trim(import_tensor%tensor_role)
+
+    select case (stage_kind)
+    case (MIZU_STAGE_MODEL_LOAD)
+      include_tensor = (tensor_role /= "multimodal_projector" .and. tensor_role /= "vision_encoder")
+    case (MIZU_STAGE_PROJECTOR)
+      include_tensor = (tensor_role == "multimodal_projector" .or. tensor_role == "vision_encoder")
+    case default
+      include_tensor = .true.
+    end select
+  end function import_tensor_matches_stage_preview
 
   subroutine append_payload_fragment(payload_text, fragment)
     character(len=*), intent(inout) :: payload_text

@@ -384,6 +384,7 @@ contains
     integer(i64)                :: required_len
 
     call write_size_t_pointer(out_required_ptr, 0_i64)
+    call copy_fortran_string_to_c("", buffer_ptr, capacity)
     call resolve_runtime_handle(runtime_ptr, box, runtime, status_code)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_runtime_copy_last_error = int(status_code, kind=c_int32_t)

@@ -89,6 +89,7 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_opaque_handles \
 	$(TEST_DIR)/test_struct_sizes \
 	$(TEST_DIR)/test_cuda_artifacts \
+	$(TEST_DIR)/test_integrated_gguf_cuda_artifacts \
 	$(TEST_DIR)/test_qwench_gguf_cuda_smoke \
 	$(TEST_DIR)/test_stage_reports
 
@@ -468,6 +469,25 @@ $(TEST_DIR)/test_cuda_artifacts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTI
 		$(BACKEND_F90) \
 		$(CAPI_F90) \
 		$(TEST_DIR)/test_cuda_artifacts.o \
+		$(APPLE_BRIDGE_OBJ) \
+		$(CUDA_BRIDGE_OBJ) \
+		$(APPLE_BRIDGE_LINK_LIBS) \
+		$(CUDA_BRIDGE_LINK_LIBS)
+
+$(TEST_DIR)/test_integrated_gguf_cuda_artifacts.o: tests/contract/test_integrated_gguf_cuda_artifacts.c | $(TEST_DIR)
+	$(CC) $(CFLAGS) $(CUDA_TEST_CPPFLAGS) -Iinclude -c $< -o $@
+
+$(TEST_DIR)/test_integrated_gguf_cuda_artifacts: $(COMMON_F90) $(MODEL_F90) $(CACHE_F90) $(RUNTIME_F90) $(BACKEND_F90) \
+	$(CAPI_F90) $(TEST_DIR)/test_integrated_gguf_cuda_artifacts.o $(CUDA_BRIDGE_OBJ) $(APPLE_BRIDGE_OBJ)
+	mkdir -p $(TEST_DIR)/integrated_gguf_cuda_mods
+	$(FC) $(FFLAGS) -J $(TEST_DIR)/integrated_gguf_cuda_mods -I $(TEST_DIR)/integrated_gguf_cuda_mods -o $@ \
+		$(COMMON_F90) \
+		$(MODEL_F90) \
+		$(CACHE_F90) \
+		$(RUNTIME_F90) \
+		$(BACKEND_F90) \
+		$(CAPI_F90) \
+		$(TEST_DIR)/test_integrated_gguf_cuda_artifacts.o \
 		$(APPLE_BRIDGE_OBJ) \
 		$(CUDA_BRIDGE_OBJ) \
 		$(APPLE_BRIDGE_LINK_LIBS) \

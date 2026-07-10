@@ -429,8 +429,11 @@ contains
     best_index = 0_i32
     do candidate_index = 1_i32, entry%candidate_count
       if (.not. candidate_is_selectable(entry%candidates(candidate_index))) cycle
-      if (best_index == 0_i32 .or. &
-          candidate_is_better(entry%candidates(candidate_index), entry%candidates(best_index))) then
+      if (best_index <= 0_i32) then
+        best_index = candidate_index
+        cycle
+      end if
+      if (candidate_is_better(entry%candidates(candidate_index), entry%candidates(best_index))) then
         best_index = candidate_index
       end if
     end do

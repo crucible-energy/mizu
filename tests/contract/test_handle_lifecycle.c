@@ -267,6 +267,61 @@ int main(void) {
                      report_storage[1].fallback_reason == 0 &&
                      report_storage[1].cache_flags == 0 &&
                      report_storage[1].elapsed_us == 0)) return 1;
+    report_buffer.report_capacity = 1;
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PARK;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_park(session, &report_buffer);
+    if (!expect_status("closed session park should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    if (!expect_true("closed session park should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("closed session park should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_RESUME;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_resume(session, &report_buffer);
+    if (!expect_status("closed session resume should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    if (!expect_true("closed session resume should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("closed session resume should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;

@@ -206,6 +206,80 @@ int main(void) {
     status = mizu_session_get_last_report(session, &report_storage[0]);
     if (!expect_status("session report should allow buffered report reuse", status, MIZU_STATUS_OK)) return 1;
 
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 2;
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PROJECTOR;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    report_storage[1].struct_size = sizeof(report_storage[1]);
+    report_storage[1].stage_kind = MIZU_STAGE_DECODE;
+    report_storage[1].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[1].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[1].plan_id = 9;
+    report_storage[1].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[1].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[1].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[1].cache_flags = UINT64_C(9);
+    report_storage[1].elapsed_us = UINT64_C(9);
+
+    memset(&decode_result, 0xA5, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+
+    status = mizu_session_decode_step(session, NULL, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject null options pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("decode null options failure should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decode_token &&
+                     decode_result.token_capacity == 1)) {
+        return 1;
+    }
+    if (!expect_true("decode null options failure should clear result outputs",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("decode null options failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 2)) return 1;
+    if (!expect_true("decode null options failure should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("decode null options failure should clear both report payloads",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0 &&
+                     report_storage[1].struct_size == sizeof(report_storage[1]) &&
+                     report_storage[1].stage_kind == 0 &&
+                     report_storage[1].backend_family == 0 &&
+                     report_storage[1].execution_route == 0 &&
+                     report_storage[1].plan_id == 0 &&
+                     report_storage[1].selection_mode == 0 &&
+                     report_storage[1].cold_state == 0 &&
+                     report_storage[1].fallback_reason == 0 &&
+                     report_storage[1].cache_flags == 0 &&
+                     report_storage[1].elapsed_us == 0)) return 1;
+
     memset(&decode_options, 0, sizeof(decode_options));
     decode_options.struct_size = sizeof(decode_options) - 1;
     decode_options.token_budget = 1;

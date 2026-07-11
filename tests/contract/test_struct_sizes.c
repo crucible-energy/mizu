@@ -397,6 +397,79 @@ int main(void) {
     if (!expect_status("decode should reject undersized token buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("decode should report required token count", decode_result.token_count == 1)) return 1;
 
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 2;
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PROJECTOR;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    report_storage[1].struct_size = sizeof(report_storage[1]);
+    report_storage[1].stage_kind = MIZU_STAGE_DECODE;
+    report_storage[1].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[1].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[1].plan_id = 9;
+    report_storage[1].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[1].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[1].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[1].cache_flags = UINT64_C(9);
+    report_storage[1].elapsed_us = UINT64_C(9);
+
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = NULL;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject null token buffer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("decode null token-buffer failure should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == NULL &&
+                     decode_result.token_capacity == 1)) return 1;
+    if (!expect_true("decode null token-buffer failure should report one token and clear other outputs",
+                     decode_result.token_count == 1 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("decode null token-buffer failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 2)) return 1;
+    if (!expect_true("decode null token-buffer failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+    if (!expect_true("decode null token-buffer failure should clear both report payloads",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0 &&
+                     report_storage[1].struct_size == sizeof(report_storage[1]) &&
+                     report_storage[1].stage_kind == 0 &&
+                     report_storage[1].backend_family == 0 &&
+                     report_storage[1].execution_route == 0 &&
+                     report_storage[1].plan_id == 0 &&
+                     report_storage[1].selection_mode == 0 &&
+                     report_storage[1].cold_state == 0 &&
+                     report_storage[1].fallback_reason == 0 &&
+                     report_storage[1].cache_flags == 0 &&
+                     report_storage[1].elapsed_us == 0)) return 1;
+
     memset(&session_info, 0, sizeof(session_info));
     session_info.struct_size = sizeof(session_info);
     status = mizu_session_get_info(session, &session_info);

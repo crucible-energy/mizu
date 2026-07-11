@@ -237,6 +237,167 @@ int main(void) {
         return 1;
     }
 
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PREFILL;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should reject missing pending inputs", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("prefill invalid-state failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("prefill invalid-state failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+    if (!expect_true("prefill invalid-state failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    memset(&decode_options, 0, sizeof(decode_options));
+    decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 1;
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_DECODE;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject missing live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("decode invalid-state failure should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decode_token &&
+                     decode_result.token_capacity == 1)) return 1;
+    if (!expect_true("decode invalid-state failure should clear result outputs",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("decode invalid-state failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("decode invalid-state failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+    if (!expect_true("decode invalid-state failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PARK;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_park(session, &report_buffer);
+    if (!expect_status("park should reject missing live context", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("park invalid-state failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("park invalid-state failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+    if (!expect_true("park invalid-state failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_RESUME;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_resume(session, &report_buffer);
+    if (!expect_status("resume should reject non-parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("resume invalid-state failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("resume invalid-state failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+    if (!expect_true("resume invalid-state failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("invalid state failures should preserve fresh session info", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("invalid state failures should leave session fresh",
+                     session_info.session_state_flags == 0 &&
+                     session_info.kv_token_count == 0 &&
+                     session_info.staged_token_count == 0 &&
+                     session_info.staged_modal_count == 0)) return 1;
+
     modal_input.data = image_bytes;
     modal_input.byte_count = sizeof(image_bytes);
     status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
@@ -714,6 +875,161 @@ int main(void) {
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("read output should reject undersized byte buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("read output should report required byte count", output_buffer.bytes_written == sizeof(int32_t))) return 1;
+
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    status = mizu_session_park(session, &report_buffer);
+    if (!expect_status("park should succeed with live context", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("park should publish one report", report_buffer.report_count == 1)) return 1;
+    if (!expect_true("park report should stamp park stage", report_storage[0].stage_kind == MIZU_STAGE_PARK)) return 1;
+
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after park", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("park should set parked and live-context flags",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) != 0 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
+
+    status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens should reject parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input should reject parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("parked session info after failed attachments", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("failed parked attachments should not stage pending inputs",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) == 0 &&
+                     session_info.staged_token_count == 0 &&
+                     session_info.staged_modal_count == 0)) return 1;
+
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PREFILL;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should reject parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("parked prefill failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("parked prefill failure should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("parked prefill failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_DECODE;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("parked decode failure should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decode_token &&
+                     decode_result.token_capacity == 1)) return 1;
+    if (!expect_true("parked decode failure should clear result outputs",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("parked decode failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("parked decode failure should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("parked decode failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    report_buffer.report_count = 9;
+    report_storage[0].struct_size = sizeof(report_storage[0]);
+    report_storage[0].stage_kind = MIZU_STAGE_PARK;
+    report_storage[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    report_storage[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    report_storage[0].plan_id = 9;
+    report_storage[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    report_storage[0].cold_state = MIZU_COLD_STATE_WARM;
+    report_storage[0].fallback_reason = MIZU_FALLBACK_REASON_NONE;
+    report_storage[0].cache_flags = UINT64_C(9);
+    report_storage[0].elapsed_us = UINT64_C(9);
+    status = mizu_session_park(session, &report_buffer);
+    if (!expect_status("park should reject already parked session", status, MIZU_STATUS_INVALID_STATE)) return 1;
+    if (!expect_true("double park failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == report_storage &&
+                     report_buffer.report_capacity == 1)) return 1;
+    if (!expect_true("double park failure should clear report count", report_buffer.report_count == 0)) return 1;
+    if (!expect_true("double park failure should clear report payload",
+                     report_storage[0].struct_size == sizeof(report_storage[0]) &&
+                     report_storage[0].stage_kind == 0 &&
+                     report_storage[0].backend_family == 0 &&
+                     report_storage[0].execution_route == 0 &&
+                     report_storage[0].plan_id == 0 &&
+                     report_storage[0].selection_mode == 0 &&
+                     report_storage[0].cold_state == 0 &&
+                     report_storage[0].fallback_reason == 0 &&
+                     report_storage[0].cache_flags == 0 &&
+                     report_storage[0].elapsed_us == 0)) return 1;
+
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    status = mizu_session_resume(session, &report_buffer);
+    if (!expect_status("resume should succeed after park", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("resume should publish one report", report_buffer.report_count == 1)) return 1;
+    if (!expect_true("resume report should stamp resume stage", report_storage[0].stage_kind == MIZU_STAGE_RESUME)) {
+        return 1;
+    }
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after resume", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("resume should clear parked flag and preserve live context",
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PARKED) == 0 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_LIVE_CONTEXT) != 0)) return 1;
 
     memset(&report, 0xA5, sizeof(report));
     report.struct_size = sizeof(report) - 1;

@@ -429,6 +429,26 @@ int main(void) {
     if (!expect_status("session info after successful decode", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("successful decode should advance kv tokens", session_info.kv_token_count == 2)) return 1;
 
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.data = NULL;
+    output_buffer.byte_capacity = sizeof(int32_t);
+    output_buffer.bytes_written = 9;
+    output_buffer.output_flags = UINT64_C(9);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output should reject null data pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("read output null-data failure should preserve inputs",
+                     output_buffer.struct_size == sizeof(output_buffer) &&
+                     output_buffer.output_kind == MIZU_OUTPUT_KIND_TOKEN_IDS &&
+                     output_buffer.data == NULL &&
+                     output_buffer.byte_capacity == sizeof(int32_t))) return 1;
+    if (!expect_true("read output null-data failure should report required byte count",
+                     output_buffer.bytes_written == sizeof(int32_t))) return 1;
+    if (!expect_true("read output null-data failure should clear output flags", output_buffer.output_flags == 0)) {
+        return 1;
+    }
+
     memset(&output_buffer, 0xA5, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer) - 1;
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;

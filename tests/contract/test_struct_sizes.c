@@ -132,6 +132,12 @@ int main(void) {
     status = mizu_session_get_info(session, NULL);
     if (!expect_status("session info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
+    memset(&decode_options, 0, sizeof(decode_options));
+    decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 1;
+    status = mizu_session_decode_step(session, &decode_options, NULL, NULL);
+    if (!expect_status("decode should reject null result output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
     memset(&model_info, 0xA5, sizeof(model_info));
     model_info.struct_size = sizeof(model_info) - 1;
     memcpy(expected_model_info_bytes, &model_info, sizeof(model_info));

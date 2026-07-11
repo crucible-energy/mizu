@@ -375,6 +375,37 @@ int main(void) {
                      report_storage[1].elapsed_us == 0)) return 1;
 
     decode_options.struct_size = sizeof(decode_options);
+    decode_options.token_budget = 1;
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = NULL;
+    report_buffer.report_capacity = 2;
+    report_buffer.report_count = 9;
+    memset(&decode_result, 0xA5, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_STOP_SEQUENCE;
+    decode_result.result_flags = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should reject null report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("decode null report-storage failure should preserve result inputs",
+                     decode_result.struct_size == sizeof(decode_result) &&
+                     decode_result.token_buffer == &decode_token &&
+                     decode_result.token_capacity == 1)) return 1;
+    if (!expect_true("decode null report-storage failure should clear result outputs",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_NONE &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("decode null report-storage failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == NULL &&
+                     report_buffer.report_capacity == 2)) return 1;
+    if (!expect_true("decode null report-storage failure should clear report count", report_buffer.report_count == 0)) {
+        return 1;
+    }
+
     decode_options.token_budget = 0;
     memset(report_storage, 0, sizeof(report_storage));
     memset(&report_buffer, 0, sizeof(report_buffer));

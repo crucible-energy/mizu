@@ -26,7 +26,9 @@ static int expect_true(const char *label, int condition) {
 int main(void) {
     mizu_runtime_t *runtime = NULL;
     mizu_runtime_t *runtime_apple = NULL;
+    mizu_runtime_t *failed_runtime = (mizu_runtime_t *)(uintptr_t)1;
     mizu_model_t *model = NULL;
+    mizu_model_t *failed_model = (mizu_model_t *)(uintptr_t)1;
     mizu_status_code_t status;
     size_t required_bytes = 0;
     size_t required_bytes_only = 0;
@@ -34,6 +36,7 @@ int main(void) {
     char error_buffer[256];
     char truncated_error_buffer[8];
     mizu_runtime_config_t runtime_config;
+    mizu_runtime_config_t bad_runtime_config;
     mizu_model_open_config_t model_config;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "0", 1) != 0) {
@@ -59,6 +62,12 @@ int main(void) {
     runtime_config.exploration_budget = 0;
     runtime_config.runtime_flags = MIZU_RUNTIME_FLAG_NONE;
 
+    bad_runtime_config = runtime_config;
+    bad_runtime_config.abi_version = 0;
+    status = mizu_runtime_create(&bad_runtime_config, &failed_runtime);
+    if (!expect_status("runtime create should reject ABI mismatch", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("failed runtime create should clear output handle", failed_runtime == NULL)) return 1;
+
     status = mizu_runtime_create(&runtime_config, &runtime);
     if (!expect_status("runtime create without backends", status, MIZU_STATUS_OK)) return 1;
 
@@ -68,8 +77,9 @@ int main(void) {
     model_config.allowed_backend_mask = MIZU_BACKEND_MASK_APPLE_ANE;
     model_config.model_flags = MIZU_MODEL_FLAG_NONE;
 
-    status = mizu_model_open(runtime, &model_config, &model);
+    status = mizu_model_open(runtime, &model_config, &failed_model);
     if (!expect_status("model open should fail when Apple is unavailable", status, MIZU_STATUS_NO_VALID_PLAN)) return 1;
+    if (!expect_true("failed model open should clear output handle", failed_model == NULL)) return 1;
 
     memset(error_buffer, 0, sizeof(error_buffer));
     status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);

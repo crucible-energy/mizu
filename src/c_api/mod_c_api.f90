@@ -1955,8 +1955,8 @@ contains
     c_info%reserved_u32 = 0_c_int32_t
   end subroutine clear_session_info_output
 
-  subroutine clear_execution_report_output(c_report)
-    type(c_execution_report), pointer, intent(inout) :: c_report
+  subroutine clear_execution_report_fields(c_report)
+    type(c_execution_report), intent(inout) :: c_report
 
     c_report%stage_kind = 0_c_int32_t
     c_report%backend_family = 0_c_int32_t
@@ -1967,6 +1967,12 @@ contains
     c_report%fallback_reason = 0_c_int32_t
     c_report%cache_flags = 0_c_int64_t
     c_report%elapsed_us = 0_c_int64_t
+  end subroutine clear_execution_report_fields
+
+  subroutine clear_execution_report_output(c_report)
+    type(c_execution_report), pointer, intent(inout) :: c_report
+
+    call clear_execution_report_fields(c_report)
   end subroutine clear_execution_report_output
 
   subroutine clear_decode_result_output(result)
@@ -6359,7 +6365,7 @@ contains
     status_code = require_output_struct_size(report_buffer%struct_size, c_sizeof(report_buffer))
     if (status_code /= MIZU_STATUS_OK) return
 
-    report_buffer%report_count = 0_c_size_t
+    call clear_report_buffer_output(report_buffer)
     if (report_buffer%report_capacity < int(required_count, kind=c_size_t)) then
       report_buffer%report_count = int(required_count, kind=c_size_t)
       status_code = MIZU_STATUS_BUFFER_TOO_SMALL
@@ -6367,6 +6373,26 @@ contains
       status_code = MIZU_STATUS_INVALID_ARGUMENT
     end if
   end function prepare_report_buffer
+
+  subroutine clear_report_buffer_output(report_buffer)
+    type(c_report_buffer), pointer, intent(inout) :: report_buffer
+    type(c_execution_report), pointer :: reports(:)
+    integer(i64) :: clear_count
+    integer :: report_index
+
+    report_buffer%report_count = 0_c_size_t
+
+    clear_count = min(int(report_buffer%report_capacity, kind=i64), 2_i64)
+    if (clear_count <= 0_i64) return
+    if (.not. c_associated(report_buffer%reports)) return
+
+    call c_f_pointer(report_buffer%reports, reports, [int(clear_count)])
+    if (.not. associated(reports)) return
+
+    do report_index = 1, int(clear_count)
+      call clear_execution_report_fields(reports(report_index))
+    end do
+  end subroutine clear_report_buffer_output
 
   subroutine fill_report_buffer(report_buffer_ptr, primary_report, secondary_report)
     type(c_ptr), value           :: report_buffer_ptr

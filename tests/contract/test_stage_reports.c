@@ -216,10 +216,31 @@ int main(void) {
     prefill_buffer.reports = prefill_reports;
     prefill_buffer.report_capacity = 1;
     prefill_buffer.report_count = 0;
+    prefill_reports[0].struct_size = sizeof(prefill_reports[0]);
+    prefill_reports[0].stage_kind = MIZU_STAGE_DECODE;
+    prefill_reports[0].backend_family = MIZU_BACKEND_FAMILY_APPLE;
+    prefill_reports[0].execution_route = MIZU_EXEC_ROUTE_ANE;
+    prefill_reports[0].plan_id = 9;
+    prefill_reports[0].selection_mode = MIZU_SELECTION_MODE_DIRECT;
+    prefill_reports[0].cold_state = MIZU_COLD_STATE_WARM;
+    prefill_reports[0].fallback_reason = MIZU_FALLBACK_REASON_UNSUPPORTED_OP;
+    prefill_reports[0].cache_flags = UINT64_C(9);
+    prefill_reports[0].elapsed_us = UINT64_C(9);
 
     status = mizu_session_prefill(session, &prefill_buffer);
     if (!expect_status("prefill should reject undersized multimodal report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("prefill should report two required stages", prefill_buffer.report_count == 2)) return 1;
+    if (!expect_true("undersized prefill report buffer should clear stale payload",
+                     prefill_reports[0].struct_size == sizeof(prefill_reports[0]) &&
+                     prefill_reports[0].stage_kind == 0 &&
+                     prefill_reports[0].backend_family == 0 &&
+                     prefill_reports[0].execution_route == 0 &&
+                     prefill_reports[0].plan_id == 0 &&
+                     prefill_reports[0].selection_mode == 0 &&
+                     prefill_reports[0].cold_state == 0 &&
+                     prefill_reports[0].fallback_reason == 0 &&
+                     prefill_reports[0].cache_flags == 0 &&
+                     prefill_reports[0].elapsed_us == 0)) return 1;
 
     prefill_buffer.report_capacity = 2;
     prefill_buffer.report_count = 0;

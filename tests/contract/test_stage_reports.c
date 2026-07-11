@@ -61,6 +61,7 @@ int main(void) {
     mizu_model_t *model_persist_reuse = NULL;
     mizu_session_t *session = NULL;
     mizu_session_t *session_cached = NULL;
+    mizu_session_t *session_optional_reports = NULL;
     mizu_session_t *session_persist_a = NULL;
     mizu_session_t *session_persist_b = NULL;
     mizu_status_code_t status;
@@ -69,6 +70,7 @@ int main(void) {
     uint8_t image_bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     int32_t decode_tokens[1] = {0};
     int32_t decode_tokens_cached[1] = {0};
+    int32_t decode_tokens_optional[1] = {0};
     const char *persist_root = "/tmp/mizu_stage_report_persist";
     const char *persist_artifact_cache_path = "/tmp/mizu_stage_report_persist/artifact_cache_v1.txt";
     mizu_execution_report_t prefill_reports[2];
@@ -80,6 +82,7 @@ int main(void) {
     mizu_execution_report_t resume_reports[1];
     mizu_execution_report_t model_reports[2];
     mizu_execution_report_t fresh_model_report;
+    mizu_execution_report_t optional_last_report;
     mizu_execution_report_t explore_reports[3];
     mizu_execution_report_t persist_reports[4];
     mizu_execution_report_t persist_prefill_reports[2];
@@ -116,6 +119,7 @@ int main(void) {
     memset(resume_reports, 0, sizeof(resume_reports));
     memset(model_reports, 0, sizeof(model_reports));
     memset(&fresh_model_report, 0, sizeof(fresh_model_report));
+    memset(&optional_last_report, 0, sizeof(optional_last_report));
     memset(explore_reports, 0, sizeof(explore_reports));
     memset(persist_reports, 0, sizeof(persist_reports));
     memset(persist_prefill_reports, 0, sizeof(persist_prefill_reports));
@@ -398,6 +402,93 @@ int main(void) {
     if (!expect_true("cached park should hit session cache", (park_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) != 0)) return 1;
     if (!expect_true("cached park should reuse winner", (park_reports_cached[0].cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
     if (!expect_true("cached park should report reuse selection", park_reports_cached[0].selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+
+    status = mizu_session_open(model_cached, &session_config, &session_optional_reports);
+    if (!expect_status("session open optional reports", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_tokens(session_optional_reports, tokens, 3, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens optional reports", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_modal_input(session_optional_reports, &modal_input);
+    if (!expect_status("attach modal input optional reports", status, MIZU_STATUS_OK)) return 1;
+
+    status = mizu_session_prefill(session_optional_reports, NULL);
+    if (!expect_status("prefill without report buffer", status, MIZU_STATUS_OK)) return 1;
+    optional_last_report.struct_size = sizeof(optional_last_report);
+    status = mizu_session_get_last_report(session_optional_reports, &optional_last_report);
+    if (!expect_status("prefill without report buffer should update last report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("prefill without report buffer should stamp prefill stage",
+                     optional_last_report.stage_kind == MIZU_STAGE_PREFILL)) return 1;
+    if (!expect_true("prefill without report buffer should report cache hit",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) != 0)) return 1;
+    if (!expect_true("prefill without report buffer should reuse winner",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
+    if (!expect_true("prefill without report buffer should report reuse selection",
+                     optional_last_report.selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("prefill without report buffer should report nonzero plan id",
+                     optional_last_report.plan_id != 0)) return 1;
+    if (!expect_true("prefill without report buffer should report elapsed time",
+                     optional_last_report.elapsed_us > 0)) return 1;
+
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = decode_tokens_optional;
+    decode_result.token_capacity = 1;
+    decode_result.token_count = 0;
+    decode_result.stop_reason = MIZU_STOP_REASON_NONE;
+    decode_result.result_flags = 0;
+    status = mizu_session_decode_step(session_optional_reports, &decode_options, &decode_result, NULL);
+    if (!expect_status("decode without report buffer", status, MIZU_STATUS_OK)) return 1;
+    optional_last_report.struct_size = sizeof(optional_last_report);
+    status = mizu_session_get_last_report(session_optional_reports, &optional_last_report);
+    if (!expect_status("decode without report buffer should update last report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("decode without report buffer should stamp decode stage",
+                     optional_last_report.stage_kind == MIZU_STAGE_DECODE)) return 1;
+    if (!expect_true("decode without report buffer should report cache hit",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_PLAN_HIT) != 0)) return 1;
+    if (!expect_true("decode without report buffer should reuse winner",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
+    if (!expect_true("decode without report buffer should report reuse selection",
+                     optional_last_report.selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("decode without report buffer should report nonzero plan id",
+                     optional_last_report.plan_id != 0)) return 1;
+    if (!expect_true("decode without report buffer should report elapsed time",
+                     optional_last_report.elapsed_us > 0)) return 1;
+
+    status = mizu_session_park(session_optional_reports, NULL);
+    if (!expect_status("park without report buffer", status, MIZU_STATUS_OK)) return 1;
+    optional_last_report.struct_size = sizeof(optional_last_report);
+    status = mizu_session_get_last_report(session_optional_reports, &optional_last_report);
+    if (!expect_status("park without report buffer should update last report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("park without report buffer should stamp park stage",
+                     optional_last_report.stage_kind == MIZU_STAGE_PARK)) return 1;
+    if (!expect_true("park without report buffer should report session cache hit",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) != 0)) return 1;
+    if (!expect_true("park without report buffer should reuse winner",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
+    if (!expect_true("park without report buffer should report reuse selection",
+                     optional_last_report.selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("park without report buffer should report nonzero plan id",
+                     optional_last_report.plan_id != 0)) return 1;
+    if (!expect_true("park without report buffer should report elapsed time",
+                     optional_last_report.elapsed_us > 0)) return 1;
+
+    status = mizu_session_resume(session_optional_reports, NULL);
+    if (!expect_status("resume without report buffer", status, MIZU_STATUS_OK)) return 1;
+    optional_last_report.struct_size = sizeof(optional_last_report);
+    status = mizu_session_get_last_report(session_optional_reports, &optional_last_report);
+    if (!expect_status("resume without report buffer should update last report", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("resume without report buffer should stamp resume stage",
+                     optional_last_report.stage_kind == MIZU_STAGE_RESUME)) return 1;
+    if (!expect_true("resume without report buffer should report session cache hit",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_SESSION_HIT) != 0)) return 1;
+    if (!expect_true("resume without report buffer should reuse winner",
+                     (optional_last_report.cache_flags & MIZU_CACHE_FLAG_WINNER_REUSED) != 0)) return 1;
+    if (!expect_true("resume without report buffer should report reuse selection",
+                     optional_last_report.selection_mode == MIZU_SELECTION_MODE_REUSE)) return 1;
+    if (!expect_true("resume without report buffer should report nonzero plan id",
+                     optional_last_report.plan_id != 0)) return 1;
+    if (!expect_true("resume without report buffer should report elapsed time",
+                     optional_last_report.elapsed_us > 0)) return 1;
+    status = mizu_session_close(session_optional_reports);
+    if (!expect_status("session close optional reports", status, MIZU_STATUS_OK)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

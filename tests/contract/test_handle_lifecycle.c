@@ -36,6 +36,7 @@ int main(void) {
     mizu_runtime_config_t runtime_config;
     mizu_model_open_config_t model_config;
     mizu_session_config_t session_config;
+    mizu_session_config_t bad_session_config;
     mizu_session_info_t session_info;
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
@@ -348,6 +349,12 @@ int main(void) {
     if (!expect_status("reopened session should remain valid", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_close(session_reuse);
     if (!expect_status("reopened session close", status, MIZU_STATUS_OK)) return 1;
+    bad_session_config = session_config;
+    bad_session_config.abi_version = 0;
+    failed_session = session_reuse;
+    status = mizu_session_open(model, &bad_session_config, &failed_session);
+    if (!expect_status("session open should reject ABI mismatch", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("failed ABI-mismatched session open should clear output handle", failed_session == NULL)) return 1;
 
     status = mizu_model_close(model);
     if (!expect_status("model close", status, MIZU_STATUS_OK)) return 1;

@@ -209,6 +209,21 @@ int main(void) {
     if (!expect_status("prefill should reject undersized report buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("prefill should report required report count", report_buffer.report_count == 1)) return 1;
 
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = NULL;
+    report_buffer.report_capacity = 2;
+    report_buffer.report_count = 9;
+    status = mizu_session_prefill(session, &report_buffer);
+    if (!expect_status("prefill should reject null report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("prefill null report-storage failure should preserve report-buffer inputs",
+                     report_buffer.struct_size == sizeof(report_buffer) &&
+                     report_buffer.reports == NULL &&
+                     report_buffer.report_capacity == 2)) {
+        return 1;
+    }
+    if (!expect_true("prefill null report-storage failure should clear report count", report_buffer.report_count == 0)) return 1;
+
     memset(report_storage, 0, sizeof(report_storage));
     memset(&report_buffer, 0, sizeof(report_buffer));
     report_buffer.struct_size = sizeof(report_buffer);

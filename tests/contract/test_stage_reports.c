@@ -242,6 +242,21 @@ int main(void) {
                      prefill_reports[0].cache_flags == 0 &&
                      prefill_reports[0].elapsed_us == 0)) return 1;
 
+    prefill_buffer.reports = NULL;
+    prefill_buffer.report_capacity = 2;
+    prefill_buffer.report_count = 9;
+    status = mizu_session_prefill(session, &prefill_buffer);
+    if (!expect_status("prefill should reject null multimodal report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("prefill null multimodal report-storage failure should preserve report-buffer inputs",
+                     prefill_buffer.struct_size == sizeof(prefill_buffer) &&
+                     prefill_buffer.reports == NULL &&
+                     prefill_buffer.report_capacity == 2)) {
+        return 1;
+    }
+    if (!expect_true("prefill null multimodal report-storage failure should clear report count",
+                     prefill_buffer.report_count == 0)) return 1;
+
+    prefill_buffer.reports = prefill_reports;
     prefill_buffer.report_capacity = 2;
     prefill_buffer.report_count = 0;
     status = mizu_session_prefill(session, &prefill_buffer);
@@ -291,6 +306,20 @@ int main(void) {
     park_buffer.report_capacity = 1;
     park_buffer.report_count = 0;
 
+    park_buffer.reports = NULL;
+    park_buffer.report_count = 9;
+    status = mizu_session_park(session, &park_buffer);
+    if (!expect_status("park should reject null report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("park null report-storage failure should preserve report-buffer inputs",
+                     park_buffer.struct_size == sizeof(park_buffer) &&
+                     park_buffer.reports == NULL &&
+                     park_buffer.report_capacity == 1)) {
+        return 1;
+    }
+    if (!expect_true("park null report-storage failure should clear report count", park_buffer.report_count == 0)) return 1;
+
+    park_buffer.reports = park_reports;
+    park_buffer.report_count = 0;
     status = mizu_session_park(session, &park_buffer);
     if (!expect_status("park", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("park stage kind should be park", park_reports[0].stage_kind == MIZU_STAGE_PARK)) return 1;
@@ -303,6 +332,20 @@ int main(void) {
     resume_buffer.report_capacity = 1;
     resume_buffer.report_count = 0;
 
+    resume_buffer.reports = NULL;
+    resume_buffer.report_count = 9;
+    status = mizu_session_resume(session, &resume_buffer);
+    if (!expect_status("resume should reject null report storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("resume null report-storage failure should preserve report-buffer inputs",
+                     resume_buffer.struct_size == sizeof(resume_buffer) &&
+                     resume_buffer.reports == NULL &&
+                     resume_buffer.report_capacity == 1)) {
+        return 1;
+    }
+    if (!expect_true("resume null report-storage failure should clear report count", resume_buffer.report_count == 0)) return 1;
+
+    resume_buffer.reports = resume_reports;
+    resume_buffer.report_count = 0;
     status = mizu_session_resume(session, &resume_buffer);
     if (!expect_status("resume", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("resume stage kind should be resume", resume_reports[0].stage_kind == MIZU_STAGE_RESUME)) return 1;

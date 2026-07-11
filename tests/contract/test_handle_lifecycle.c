@@ -79,6 +79,12 @@ int main(void) {
     if (!expect_status("session close null", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_clear_pending_inputs(NULL);
     if (!expect_status("clear pending inputs null", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    required_bytes = 9;
+    memset(error_buffer, 'X', sizeof(error_buffer));
+    status = mizu_runtime_copy_last_error(NULL, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error null runtime", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("copy last error null runtime should clear required size", required_bytes == 0)) return 1;
+    if (!expect_true("copy last error null runtime should clear error buffer", error_buffer[0] == '\0')) return 1;
 
     runtime_config.struct_size = sizeof(runtime_config);
     runtime_config.abi_version = mizu_get_abi_version();

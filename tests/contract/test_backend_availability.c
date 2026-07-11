@@ -101,6 +101,11 @@ int main(void) {
     if (!expect_status("copy last error size only", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("size-only error copy should match required size",
                      required_bytes_only == required_bytes)) return 1;
+    memset(error_buffer, 0, sizeof(error_buffer));
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), NULL);
+    if (!expect_status("copy last error without required size output", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("copy last error without required size output should still write text",
+                     strstr(error_buffer, "no requested backend is available on this runtime") != NULL)) return 1;
     memset(truncated_error_buffer, 'X', sizeof(truncated_error_buffer));
     status = mizu_runtime_copy_last_error(runtime, truncated_error_buffer, sizeof(truncated_error_buffer),
                                           &truncated_required_bytes);

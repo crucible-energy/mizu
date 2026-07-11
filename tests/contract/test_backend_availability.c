@@ -72,6 +72,13 @@ int main(void) {
     status = mizu_runtime_create(&runtime_config, &runtime);
     if (!expect_status("runtime create without backends", status, MIZU_STATUS_OK)) return 1;
 
+    memset(error_buffer, 'X', sizeof(error_buffer));
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("fresh runtime should expose empty last error", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("fresh runtime empty error should report one required byte", required_bytes == 1)) return 1;
+    if (!expect_true("fresh runtime empty error should write a terminator", error_buffer[0] == '\0')) return 1;
+
     model_config.struct_size = sizeof(model_config);
     model_config.abi_version = mizu_get_abi_version();
     model_config.model_root_z = "tests/fixtures/models/fixture_mm_tiny";
@@ -85,6 +92,35 @@ int main(void) {
     if (!expect_status("model open should reject ABI mismatch", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
     if (!expect_true("failed ABI-mismatched model open should clear output handle", failed_model == NULL)) return 1;
 
+    model_config.model_root_z = "tests/fixtures/models/fixture_bad_manifest";
+    failed_model = (mizu_model_t *)(uintptr_t)1;
+    status = mizu_model_open(runtime, &model_config, &failed_model);
+    if (!expect_status("model open should reject bad manifest fixture", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed bad-manifest model open should clear output handle", failed_model == NULL)) return 1;
+    memset(error_buffer, 0, sizeof(error_buffer));
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error after bad manifest", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("bad-manifest error copy should report full required size",
+                     required_bytes == strlen(error_buffer) + 1)) return 1;
+    if (!expect_true("bad-manifest error text should mention manifest load failure",
+                     strstr(error_buffer, "model manifest load failed") != NULL)) return 1;
+
+    model_config.model_root_z = "tests/fixtures/models/fixture_bad_import_bundle";
+    failed_model = (mizu_model_t *)(uintptr_t)1;
+    status = mizu_model_open(runtime, &model_config, &failed_model);
+    if (!expect_status("model open should reject bad import bundle fixture", status, MIZU_STATUS_IO_ERROR)) return 1;
+    if (!expect_true("failed bad-import-bundle model open should clear output handle", failed_model == NULL)) return 1;
+    memset(error_buffer, 0, sizeof(error_buffer));
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error after bad import bundle", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("bad-import-bundle error copy should report full required size",
+                     required_bytes == strlen(error_buffer) + 1)) return 1;
+    if (!expect_true("bad-import-bundle error text should mention manifest load failure",
+                     strstr(error_buffer, "model manifest load failed") != NULL)) return 1;
+
+    model_config.model_root_z = "tests/fixtures/models/fixture_mm_tiny";
     failed_model = (mizu_model_t *)(uintptr_t)1;
     status = mizu_model_open(runtime, &model_config, &failed_model);
     if (!expect_status("model open should fail when Apple is unavailable", status, MIZU_STATUS_NO_VALID_PLAN)) return 1;

@@ -38,6 +38,7 @@ int main(void) {
     mizu_runtime_config_t runtime_config;
     mizu_runtime_config_t bad_runtime_config;
     mizu_model_open_config_t model_config;
+    mizu_model_open_config_t bad_model_config;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "0", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE=0\n");
@@ -77,6 +78,14 @@ int main(void) {
     model_config.allowed_backend_mask = MIZU_BACKEND_MASK_APPLE_ANE;
     model_config.model_flags = MIZU_MODEL_FLAG_NONE;
 
+    bad_model_config = model_config;
+    bad_model_config.abi_version = 0;
+    failed_model = (mizu_model_t *)(uintptr_t)1;
+    status = mizu_model_open(runtime, &bad_model_config, &failed_model);
+    if (!expect_status("model open should reject ABI mismatch", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+    if (!expect_true("failed ABI-mismatched model open should clear output handle", failed_model == NULL)) return 1;
+
+    failed_model = (mizu_model_t *)(uintptr_t)1;
     status = mizu_model_open(runtime, &model_config, &failed_model);
     if (!expect_status("model open should fail when Apple is unavailable", status, MIZU_STATUS_NO_VALID_PLAN)) return 1;
     if (!expect_true("failed model open should clear output handle", failed_model == NULL)) return 1;

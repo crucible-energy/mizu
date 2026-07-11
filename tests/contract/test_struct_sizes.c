@@ -82,6 +82,11 @@ int main(void) {
     status = mizu_runtime_create(&runtime_config, NULL);
     if (!expect_status("runtime create should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
+    bad_runtime = (mizu_runtime_t *)(uintptr_t)1;
+    status = mizu_runtime_create(NULL, &bad_runtime);
+    if (!expect_status("runtime create should reject null config pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed runtime create should clear output handle", bad_runtime == NULL)) return 1;
+
     bad_runtime_config = runtime_config;
     bad_runtime_config.struct_size = sizeof(bad_runtime_config) - 1;
     status = mizu_runtime_create(&bad_runtime_config, &bad_runtime);
@@ -99,6 +104,11 @@ int main(void) {
 
     status = mizu_model_open(runtime, &model_config, NULL);
     if (!expect_status("model open should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    bad_model = (mizu_model_t *)(uintptr_t)1;
+    status = mizu_model_open(runtime, NULL, &bad_model);
+    if (!expect_status("model open should reject null config pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed model open should clear output handle", bad_model == NULL)) return 1;
 
     bad_model_config = model_config;
     bad_model_config.struct_size = sizeof(bad_model_config) - 1;
@@ -121,6 +131,11 @@ int main(void) {
 
     status = mizu_session_open(model, &session_config, NULL);
     if (!expect_status("session open should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    bad_session = (mizu_session_t *)(uintptr_t)1;
+    status = mizu_session_open(model, NULL, &bad_session);
+    if (!expect_status("session open should reject null config pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    if (!expect_true("failed session open should clear output handle", bad_session == NULL)) return 1;
 
     bad_session_config = session_config;
     bad_session_config.struct_size = sizeof(bad_session_config) - 1;

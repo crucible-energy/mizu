@@ -120,6 +120,24 @@ int main(void) {
     if (!expect_true("bad-import-bundle error text should mention manifest load failure",
                      strstr(error_buffer, "model manifest load failed") != NULL)) return 1;
 
+    model_config.model_root_z = "tests/fixtures/models/unknown_builtin_target";
+    failed_model = (mizu_model_t *)(uintptr_t)1;
+    status = mizu_model_open(runtime, &model_config, &failed_model);
+    if (!expect_status("model open should reject unsupported builtin target", status, MIZU_STATUS_UNSUPPORTED_MODEL)) {
+        return 1;
+    }
+    if (!expect_true("failed unsupported builtin-target model open should clear output handle", failed_model == NULL)) {
+        return 1;
+    }
+    memset(error_buffer, 0, sizeof(error_buffer));
+    required_bytes = 0;
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
+    if (!expect_status("copy last error after unsupported builtin target", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("unsupported builtin-target error copy should report full required size",
+                     required_bytes == strlen(error_buffer) + 1)) return 1;
+    if (!expect_true("unsupported builtin-target error text should mention manifest load failure",
+                     strstr(error_buffer, "model manifest load failed") != NULL)) return 1;
+
     model_config.model_root_z = "tests/fixtures/models/fixture_mm_tiny";
     failed_model = (mizu_model_t *)(uintptr_t)1;
     status = mizu_model_open(runtime, &model_config, &failed_model);

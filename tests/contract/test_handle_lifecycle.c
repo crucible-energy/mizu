@@ -41,6 +41,7 @@ int main(void) {
     mizu_session_info_t session_info_reuse;
     mizu_model_info_t model_info;
     mizu_model_info_t model_info_reuse;
+    mizu_modal_input_desc_t modal_input;
     mizu_execution_report_t model_report;
     mizu_execution_report_t session_report;
     mizu_report_buffer_t report_buffer;
@@ -50,6 +51,7 @@ int main(void) {
     mizu_execution_report_t report_storage[2];
     int32_t decoded_token = 7;
     int32_t output_token = 7;
+    uint8_t image_bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     char error_buffer[8] = "stale";
     size_t required_bytes = 0;
 
@@ -75,6 +77,8 @@ int main(void) {
     if (!expect_status("model close null", status, MIZU_STATUS_OK)) return 1;
     status = mizu_session_close(NULL);
     if (!expect_status("session close null", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_clear_pending_inputs(NULL);
+    if (!expect_status("clear pending inputs null", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
     runtime_config.struct_size = sizeof(runtime_config);
     runtime_config.abi_version = mizu_get_abi_version();
@@ -167,6 +171,29 @@ int main(void) {
                      session_report.fallback_reason == 0 &&
                      session_report.cache_flags == 0 &&
                      session_report.elapsed_us == 0)) return 1;
+    status = mizu_session_clear_pending_inputs(session);
+    if (!expect_status("closed session clear pending inputs should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    memset(&modal_input, 0, sizeof(modal_input));
+    modal_input.struct_size = sizeof(modal_input);
+    modal_input.slot_name_z = "image";
+    modal_input.placeholder_ordinal = 1;
+    modal_input.modality_kind = MIZU_MODALITY_KIND_IMAGE;
+    modal_input.storage_kind = MIZU_STORAGE_KIND_ENCODED_BYTES;
+    modal_input.dtype = MIZU_DTYPE_U8;
+    modal_input.data = image_bytes;
+    modal_input.byte_count = sizeof(image_bytes);
+    modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
+    modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
+    status = mizu_session_attach_tokens(session, &decoded_token, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("closed session attach tokens should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("closed session attach modal input should reject stale handle", status, MIZU_STATUS_INVALID_ARGUMENT)) {
+        return 1;
+    }
     memset(&decode_options, 0, sizeof(decode_options));
     decode_options.struct_size = sizeof(decode_options);
     decode_options.token_budget = 1;

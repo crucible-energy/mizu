@@ -54,6 +54,7 @@ int main(void) {
     unsigned char expected_output_buffer_bytes[sizeof(mizu_output_buffer_t)];
     unsigned char expected_report_storage_bytes[sizeof(mizu_execution_report_t) * 2];
     const int32_t prefill_tokens[] = { 17 };
+    uint8_t image_bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     int32_t decode_token = 7;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -214,6 +215,35 @@ int main(void) {
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("failed input attachments should preserve session info access", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("failed input attachments should not stage pending inputs",
+                     session_info.staged_token_count == 0 &&
+                     session_info.staged_modal_count == 0 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) == 0)) {
+        return 1;
+    }
+
+    modal_input.data = image_bytes;
+    modal_input.byte_count = sizeof(image_bytes);
+    status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens for clear pending inputs", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("attach modal input for clear pending inputs", status, MIZU_STATUS_OK)) return 1;
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info should expose pending inputs before clear", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("pending inputs should stage one token and one modal input",
+                     session_info.staged_token_count == 1 &&
+                     session_info.staged_modal_count == 1 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) != 0)) {
+        return 1;
+    }
+    status = mizu_session_clear_pending_inputs(session);
+    if (!expect_status("clear pending inputs", status, MIZU_STATUS_OK)) return 1;
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info should expose cleared pending inputs", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("clear pending inputs should clear staged state",
                      session_info.staged_token_count == 0 &&
                      session_info.staged_modal_count == 0 &&
                      (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) == 0)) {

@@ -56,6 +56,7 @@ int main(void) {
     const int32_t prefill_tokens[] = { 17 };
     uint8_t image_bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     int32_t decode_token = 7;
+    int32_t output_token = 0;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
         fprintf(stderr, "failed to set MIZU_FORCE_APPLE_ANE_AVAILABLE=1\n");
@@ -628,15 +629,49 @@ int main(void) {
     if (!expect_true("failed decode should clear output bytes", output_buffer.bytes_written == 0)) return 1;
     if (!expect_true("failed decode should clear output flags", output_buffer.output_flags == 0)) return 1;
 
-    {
-        int32_t decoded_token = 0;
-        memset(&decode_result, 0, sizeof(decode_result));
-        decode_result.struct_size = sizeof(decode_result);
-        decode_result.token_buffer = &decoded_token;
-        decode_result.token_capacity = 1;
-        status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
-        if (!expect_status("decode should succeed with one token slot", status, MIZU_STATUS_OK)) return 1;
+    decode_token = 0;
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_buffer = &decode_token;
+    decode_result.token_capacity = 1;
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
+    if (!expect_status("decode should succeed with one token slot", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("decode success should publish one token", decode_result.token_count == 1)) return 1;
+
+    output_token = 0;
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_NONE;
+    output_buffer.data = &output_token;
+    output_buffer.byte_capacity = sizeof(output_token);
+    output_buffer.bytes_written = 9;
+    output_buffer.output_flags = UINT64_C(9);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output should reject unsupported output kind", status, MIZU_STATUS_UNSUPPORTED_MODALITY)) {
+        return 1;
     }
+    if (!expect_true("unsupported output-kind failure should preserve inputs",
+                     output_buffer.struct_size == sizeof(output_buffer) &&
+                     output_buffer.output_kind == MIZU_OUTPUT_KIND_NONE &&
+                     output_buffer.data == &output_token &&
+                     output_buffer.byte_capacity == sizeof(output_token))) return 1;
+    if (!expect_true("unsupported output-kind failure should clear outputs",
+                     output_buffer.bytes_written == 0 &&
+                     output_buffer.output_flags == 0)) return 1;
+
+    output_token = 0;
+    memset(&output_buffer, 0, sizeof(output_buffer));
+    output_buffer.struct_size = sizeof(output_buffer);
+    output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    output_buffer.data = &output_token;
+    output_buffer.byte_capacity = sizeof(output_token);
+    status = mizu_session_read_output(session, &output_buffer);
+    if (!expect_status("read output should succeed after unsupported output kind", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("read output success should report one token", output_buffer.bytes_written == sizeof(output_token))) {
+        return 1;
+    }
+    if (!expect_true("read output success should leave flags cleared", output_buffer.output_flags == 0)) return 1;
+    if (!expect_true("read output success should preserve decoded token", output_token == decode_token)) return 1;
 
     memset(&session_info, 0, sizeof(session_info));
     session_info.struct_size = sizeof(session_info);

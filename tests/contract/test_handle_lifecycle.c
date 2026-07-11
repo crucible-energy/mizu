@@ -49,6 +49,7 @@ int main(void) {
     mizu_execution_report_t report_storage[1];
     int32_t decoded_token = 7;
     int32_t output_token = 7;
+    char error_buffer[8] = "stale";
     size_t required_bytes = 0;
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -291,9 +292,10 @@ int main(void) {
     status = mizu_runtime_create(&runtime_config, &runtime_reuse);
     if (!expect_status("runtime recreate", status, MIZU_STATUS_OK)) return 1;
     required_bytes = 9;
-    status = mizu_runtime_copy_last_error(runtime, NULL, 0, &required_bytes);
+    status = mizu_runtime_copy_last_error(runtime, error_buffer, sizeof(error_buffer), &required_bytes);
     if (!expect_status("destroyed runtime copy last error", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     if (!expect_true("destroyed runtime copy last error should clear required size", required_bytes == 0)) return 1;
+    if (!expect_true("destroyed runtime copy last error should clear error buffer", error_buffer[0] == '\0')) return 1;
     status = mizu_runtime_destroy(runtime);
     if (!expect_status("double runtime destroy", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
     status = mizu_runtime_destroy(runtime_reuse);

@@ -46,6 +46,13 @@ int main(void) {
     mizu_decode_result_t decode_result;
     mizu_output_buffer_t output_buffer;
     mizu_execution_report_t report_storage[2];
+    unsigned char expected_model_info_bytes[sizeof(mizu_model_info_t)];
+    unsigned char expected_session_info_bytes[sizeof(mizu_session_info_t)];
+    unsigned char expected_report_bytes[sizeof(mizu_execution_report_t)];
+    unsigned char expected_report_buffer_bytes[sizeof(mizu_report_buffer_t)];
+    unsigned char expected_decode_result_bytes[sizeof(mizu_decode_result_t)];
+    unsigned char expected_output_buffer_bytes[sizeof(mizu_output_buffer_t)];
+    unsigned char expected_report_storage_bytes[sizeof(mizu_execution_report_t) * 2];
     const int32_t prefill_tokens[] = { 17 };
 
     if (setenv("MIZU_FORCE_APPLE_ANE_AVAILABLE", "1", 1) != 0) {
@@ -124,15 +131,21 @@ int main(void) {
     status = mizu_session_get_info(session, NULL);
     if (!expect_status("session info should reject null output", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
 
-    memset(&model_info, 0, sizeof(model_info));
+    memset(&model_info, 0xA5, sizeof(model_info));
     model_info.struct_size = sizeof(model_info) - 1;
+    memcpy(expected_model_info_bytes, &model_info, sizeof(model_info));
     status = mizu_model_get_info(model, &model_info);
     if (!expect_status("model info should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("model info short-struct failure should preserve caller bytes",
+                     memcmp(&model_info, expected_model_info_bytes, sizeof(model_info)) == 0)) return 1;
 
-    memset(&report, 0, sizeof(report));
+    memset(&report, 0xA5, sizeof(report));
     report.struct_size = sizeof(report) - 1;
+    memcpy(expected_report_bytes, &report, sizeof(report));
     status = mizu_model_get_last_report(model, &report);
     if (!expect_status("model report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("model report short-struct failure should preserve caller bytes",
+                     memcmp(&report, expected_report_bytes, sizeof(report)) == 0)) return 1;
 
     memset(&report, 0, sizeof(report));
     report.struct_size = sizeof(report);
@@ -142,22 +155,32 @@ int main(void) {
     status = mizu_model_get_last_report(model, &report);
     if (!expect_status("model report should allow same struct reuse", status, MIZU_STATUS_OK)) return 1;
 
-    memset(&session_info, 0, sizeof(session_info));
+    memset(&session_info, 0xA5, sizeof(session_info));
     session_info.struct_size = sizeof(session_info) - 1;
+    memcpy(expected_session_info_bytes, &session_info, sizeof(session_info));
     status = mizu_session_get_info(session, &session_info);
     if (!expect_status("session info should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("session info short-struct failure should preserve caller bytes",
+                     memcmp(&session_info, expected_session_info_bytes, sizeof(session_info)) == 0)) return 1;
 
     memset(&modal_input, 0, sizeof(modal_input));
     modal_input.struct_size = sizeof(modal_input) - 1;
     status = mizu_session_attach_modal_input(session, &modal_input);
     if (!expect_status("modal input should reject short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
 
-    memset(&report_buffer, 0, sizeof(report_buffer));
+    memset(report_storage, 0xA5, sizeof(report_storage));
+    memset(&report_buffer, 0xA5, sizeof(report_buffer));
     report_buffer.struct_size = sizeof(report_buffer) - 1;
     report_buffer.reports = report_storage;
     report_buffer.report_capacity = 2;
+    memcpy(expected_report_buffer_bytes, &report_buffer, sizeof(report_buffer));
+    memcpy(expected_report_storage_bytes, report_storage, sizeof(report_storage));
     status = mizu_session_prefill(session, &report_buffer);
     if (!expect_status("prefill should reject short report buffer struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("prefill short report-buffer failure should preserve caller bytes",
+                     memcmp(&report_buffer, expected_report_buffer_bytes, sizeof(report_buffer)) == 0)) return 1;
+    if (!expect_true("prefill short report-buffer failure should preserve staged report payload bytes",
+                     memcmp(report_storage, expected_report_storage_bytes, sizeof(report_storage)) == 0)) return 1;
 
     status = mizu_session_attach_tokens(session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
     if (!expect_status("attach tokens for prefill", status, MIZU_STATUS_OK)) return 1;
@@ -215,11 +238,14 @@ int main(void) {
     if (!expect_true("failed decode should clear output flags", decode_result.result_flags == 0)) return 1;
     if (!expect_true("failed decode should not publish reports", report_buffer.report_count == 0)) return 1;
 
-    memset(&decode_result, 0, sizeof(decode_result));
+    memset(&decode_result, 0xA5, sizeof(decode_result));
     decode_result.struct_size = sizeof(decode_result) - 1;
     decode_result.token_capacity = 1;
+    memcpy(expected_decode_result_bytes, &decode_result, sizeof(decode_result));
     status = mizu_session_decode_step(session, &decode_options, &decode_result, NULL);
     if (!expect_status("decode should reject short result struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("decode short result-struct failure should preserve caller bytes",
+                     memcmp(&decode_result, expected_decode_result_bytes, sizeof(decode_result)) == 0)) return 1;
 
     decode_options.token_budget = 1;
     memset(&decode_result, 0, sizeof(decode_result));
@@ -260,11 +286,14 @@ int main(void) {
     if (!expect_status("session info after successful decode", status, MIZU_STATUS_OK)) return 1;
     if (!expect_true("successful decode should advance kv tokens", session_info.kv_token_count == 2)) return 1;
 
-    memset(&output_buffer, 0, sizeof(output_buffer));
+    memset(&output_buffer, 0xA5, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer) - 1;
     output_buffer.output_kind = MIZU_OUTPUT_KIND_TOKEN_IDS;
+    memcpy(expected_output_buffer_bytes, &output_buffer, sizeof(output_buffer));
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("read output should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("read output short-struct failure should preserve caller bytes",
+                     memcmp(&output_buffer, expected_output_buffer_bytes, sizeof(output_buffer)) == 0)) return 1;
 
     memset(&output_buffer, 0, sizeof(output_buffer));
     output_buffer.struct_size = sizeof(output_buffer);
@@ -273,10 +302,13 @@ int main(void) {
     if (!expect_status("read output should reject undersized byte buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("read output should report required byte count", output_buffer.bytes_written == sizeof(int32_t))) return 1;
 
-    memset(&report, 0, sizeof(report));
+    memset(&report, 0xA5, sizeof(report));
     report.struct_size = sizeof(report) - 1;
+    memcpy(expected_report_bytes, &report, sizeof(report));
     status = mizu_session_get_last_report(session, &report);
     if (!expect_status("session report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
+    if (!expect_true("session report short-struct failure should preserve caller bytes",
+                     memcmp(&report, expected_report_bytes, sizeof(report)) == 0)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

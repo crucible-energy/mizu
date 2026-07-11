@@ -179,10 +179,46 @@ int main(void) {
     if (!expect_true("session info short-struct failure should preserve caller bytes",
                      memcmp(&session_info, expected_session_info_bytes, sizeof(session_info)) == 0)) return 1;
 
+    status = mizu_session_attach_modal_input(session, NULL);
+    if (!expect_status("modal input should reject null pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
     memset(&modal_input, 0, sizeof(modal_input));
     modal_input.struct_size = sizeof(modal_input) - 1;
     status = mizu_session_attach_modal_input(session, &modal_input);
     if (!expect_status("modal input should reject short struct", status, MIZU_STATUS_ABI_MISMATCH)) return 1;
+
+    memset(&modal_input, 0, sizeof(modal_input));
+    modal_input.struct_size = sizeof(modal_input);
+    modal_input.slot_name_z = "image";
+    modal_input.placeholder_ordinal = 1;
+    modal_input.modality_kind = MIZU_MODALITY_KIND_IMAGE;
+    modal_input.storage_kind = MIZU_STORAGE_KIND_ENCODED_BYTES;
+    modal_input.dtype = MIZU_DTYPE_U8;
+    modal_input.rank = 0;
+    modal_input.shape = NULL;
+    modal_input.data = NULL;
+    modal_input.byte_count = 1;
+    modal_input.lifetime_policy = MIZU_LIFETIME_POLICY_COPY;
+    modal_input.input_flags = MIZU_INPUT_FLAG_NONE;
+    status = mizu_session_attach_modal_input(session, &modal_input);
+    if (!expect_status("modal input should reject null data pointer", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    status = mizu_session_attach_tokens(session, NULL, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens should reject null token storage", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    status = mizu_session_attach_tokens(session, prefill_tokens, 0, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("attach tokens should reject zero token count", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("failed input attachments should preserve session info access", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("failed input attachments should not stage pending inputs",
+                     session_info.staged_token_count == 0 &&
+                     session_info.staged_modal_count == 0 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) == 0)) {
+        return 1;
+    }
 
     memset(report_storage, 0xA5, sizeof(report_storage));
     memset(&report_buffer, 0xA5, sizeof(report_buffer));

@@ -1,6 +1,6 @@
 program test_session_staging
   use mod_kinds,   only: i8, i32, i64
-  use mod_status,  only: MIZU_STATUS_OK, MIZU_STATUS_INVALID_STATE
+  use mod_status,  only: MIZU_STATUS_OK, MIZU_STATUS_INVALID_ARGUMENT, MIZU_STATUS_INVALID_STATE
   use mod_types,   only: session_state, session_config, MIZU_BACKEND_FAMILY_APPLE, MIZU_BACKEND_FAMILY_CUDA, &
                          MIZU_EXEC_ROUTE_ANE, MIZU_EXEC_ROUTE_CUDA, MIZU_STOP_REASON_TOKEN_BUDGET
   use mod_session, only: initialize_session_state, stage_tokens, stage_modal_input, clear_pending_inputs, &
@@ -11,6 +11,7 @@ program test_session_staging
   implicit none
 
   type(session_state) :: session
+  type(session_state) :: limited_session
   integer(i32)        :: status_code
   integer(i32)        :: tokens_a(3)
   integer(i32)        :: tokens_b(2)
@@ -123,6 +124,15 @@ program test_session_staging
   call offload_live_context_record(session)
   call expect_equal_i32("offloaded Apple context should also make decode invalid until restored", &
     validate_decode(session), MIZU_STATUS_INVALID_STATE)
+
+  call initialize_session_state(limited_session, session_config(max_context_tokens=2_i64))
+  call stage_tokens(limited_session, 3_i64, status_code, tokens_a)
+  call expect_equal_i32("limited session should stage tokens", status_code, MIZU_STATUS_OK)
+  call complete_prefill(limited_session, status_code=status_code)
+  call expect_equal_i32("prefill should reject context overflow", status_code, MIZU_STATUS_INVALID_ARGUMENT)
+  call expect_equal_i64("context overflow should preserve kv tokens", limited_session%kv_token_count, 0_i64)
+  call expect_equal_i64("context overflow should preserve staged tokens", limited_session%staged_token_count, 3_i64)
+  call expect_true("context overflow should retain pending inputs", limited_session%has_pending_inputs)
 
   write(*, "(A)") "test_session_staging: PASS"
 

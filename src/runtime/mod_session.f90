@@ -14,7 +14,7 @@ module mod_session
   private
   public :: initialize_session_state, reset_session_state
   public :: validate_attach_tokens, validate_attach_modal_input
-  public :: validate_clear_pending_inputs, validate_prefill
+  public :: validate_clear_pending_inputs, validate_prefill, prefill_would_exceed_context
   public :: validate_decode, validate_park, validate_resume
   public :: validate_read_output, decode_token_limit_reached
   public :: stage_tokens, stage_modal_input, clear_pending_inputs
@@ -103,6 +103,19 @@ contains
       status_code = MIZU_STATUS_OK
     end if
   end function validate_prefill
+
+  pure logical function prefill_would_exceed_context(session, token_count) result(would_exceed)
+    type(session_state), intent(in) :: session
+    integer(i64), intent(in)        :: token_count
+
+    would_exceed = token_count < 0_i64
+    if (would_exceed .or. session%config%max_context_tokens <= 0_i64) return
+    if (session%kv_token_count < 0_i64 .or. session%kv_token_count > session%config%max_context_tokens) then
+      would_exceed = .true.
+      return
+    end if
+    would_exceed = token_count > session%config%max_context_tokens - session%kv_token_count
+  end function prefill_would_exceed_context
 
   pure integer(i32) function validate_decode(session) result(status_code)
     type(session_state), intent(in) :: session
@@ -270,6 +283,10 @@ contains
     if (present(consumed_token_count)) token_count = consumed_token_count
 
     if (token_count < 0_i64) then
+      status_code = MIZU_STATUS_INVALID_ARGUMENT
+      return
+    end if
+    if (prefill_would_exceed_context(session, token_count)) then
       status_code = MIZU_STATUS_INVALID_ARGUMENT
       return
     end if

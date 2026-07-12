@@ -54,6 +54,7 @@ module mod_c_api
                            complete_prefill, complete_decode, complete_decode_terminal, park_session_state, &
                            resume_session_state, evict_parked_session, &
                            build_session_info, validate_decode, validate_read_output, decode_token_limit_reached, &
+                           prefill_would_exceed_context, &
                            store_live_context_record, &
                            update_live_context_record, offload_live_context_record
   use mod_optimization_store, only: runtime_optimization_store, &
@@ -1184,6 +1185,11 @@ contains
     staged_modal_dtype_before = session%staged_modal_dtype
     staged_modal_slot_name_before = session%staged_modal_slot_name
     prefill_cold_state = merge(MIZU_COLD_STATE_WARM, MIZU_COLD_STATE_COLD, session%has_live_context)
+
+    if (prefill_would_exceed_context(session, staged_tokens_before)) then
+      mizu_session_prefill = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
 
     status_code = prepare_report_buffer(out_reports_ptr, required_reports)
     if (status_code /= MIZU_STATUS_OK) then

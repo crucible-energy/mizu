@@ -2,9 +2,10 @@ program test_session_staging
   use mod_kinds,   only: i8, i32, i64
   use mod_status,  only: MIZU_STATUS_OK, MIZU_STATUS_INVALID_STATE
   use mod_types,   only: session_state, session_config, MIZU_BACKEND_FAMILY_APPLE, MIZU_BACKEND_FAMILY_CUDA, &
-                         MIZU_EXEC_ROUTE_ANE, MIZU_EXEC_ROUTE_CUDA
+                         MIZU_EXEC_ROUTE_ANE, MIZU_EXEC_ROUTE_CUDA, MIZU_STOP_REASON_TOKEN_BUDGET
   use mod_session, only: initialize_session_state, stage_tokens, stage_modal_input, clear_pending_inputs, &
-                         complete_prefill, complete_decode, store_live_context_record, &
+                         complete_prefill, complete_decode, complete_decode_terminal, decode_token_limit_reached, &
+                         store_live_context_record, &
                          update_live_context_record, offload_live_context_record, validate_decode
 
   implicit none
@@ -26,7 +27,7 @@ program test_session_staging
   context_bytes_b = [21_i8, 32_i8, 43_i8, 54_i8, 65_i8, 76_i8]
   modal_bytes = [1_i8, 2_i8, 3_i8, 4_i8]
 
-  call initialize_session_state(session, session_config())
+  call initialize_session_state(session, session_config(max_decode_tokens=1_i64))
   call stage_tokens(session, 3_i64, status_code, tokens_a)
   call expect_equal_i32("first staged token call should succeed", status_code, MIZU_STATUS_OK)
   call expect_equal_i64("staged token count should reflect first batch", session%staged_token_count, 3_i64)
@@ -86,8 +87,18 @@ program test_session_staging
   call expect_equal_i32("complete decode should succeed", status_code, MIZU_STATUS_OK)
   call expect_true("decode should advance live context hash", session%live_context_hash /= live_context_hash_after_prefill)
   call expect_equal_i64("decode should update kv token count", session%kv_token_count, 4_i64)
+  call expect_equal_i64("decode should track emitted token count", session%decoded_token_count, 1_i64)
   call expect_equal_i64("decode should expose one output token", session%last_output_token_count, 1_i64)
   call expect_equal_i32("decode should retain emitted token", session%last_output_tokens(1), emitted_tokens(1))
+  call expect_true("decode should reach configured token limit", decode_token_limit_reached(session))
+  live_context_hash_after_prefill = session%live_context_hash
+  call complete_decode_terminal(session, MIZU_STOP_REASON_TOKEN_BUDGET, status_code)
+  call expect_equal_i32("terminal decode completion should succeed", status_code, MIZU_STATUS_OK)
+  call expect_equal_i64("terminal decode should not emit tokens", session%last_output_token_count, 0_i64)
+  call expect_equal_i32("terminal decode should retain token-budget reason", &
+    session%last_stop_reason, MIZU_STOP_REASON_TOKEN_BUDGET)
+  call expect_equal_i64("terminal decode should preserve live context", &
+    session%live_context_hash, live_context_hash_after_prefill)
 
   call update_live_context_record(session, context_bytes_b, 6_i32)
   call expect_equal_i32("updated context buffer should keep byte count", session%live_context_byte_count, 6_i32)

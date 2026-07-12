@@ -51,9 +51,10 @@ module mod_c_api
   use mod_workspace, only: reserve_workspace_bytes, release_workspace_bytes
   use mod_session,   only: initialize_session_state, reset_session_state, &
                            stage_tokens, stage_modal_input, clear_pending_inputs, &
-                           complete_prefill, complete_decode, park_session_state, &
+                           complete_prefill, complete_decode, complete_decode_terminal, park_session_state, &
                            resume_session_state, evict_parked_session, &
-                           build_session_info, validate_read_output, store_live_context_record, &
+                           build_session_info, validate_decode, validate_read_output, decode_token_limit_reached, &
+                           store_live_context_record, &
                            update_live_context_record, offload_live_context_record
   use mod_optimization_store, only: runtime_optimization_store, &
                                      initialize_runtime_optimization_store, &
@@ -1455,14 +1456,31 @@ contains
       return
     end if
 
-    status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
+    if (options%token_budget <= 0_c_int64_t) then
+      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+      return
+    end if
+
+    status_code = validate_decode(session)
     if (status_code /= MIZU_STATUS_OK) then
       mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
 
-    if (options%token_budget <= 0_c_int64_t) then
-      mizu_session_decode_step = int(MIZU_STATUS_INVALID_ARGUMENT, kind=c_int32_t)
+    if (decode_token_limit_reached(session)) then
+      call complete_decode_terminal(session, MIZU_STOP_REASON_TOKEN_BUDGET, status_code)
+      if (status_code /= MIZU_STATUS_OK) then
+        mizu_session_decode_step = int(status_code, kind=c_int32_t)
+        return
+      end if
+      result%stop_reason = int(MIZU_STOP_REASON_TOKEN_BUDGET, kind=c_int32_t)
+      mizu_session_decode_step = int(MIZU_STATUS_END_OF_SEQUENCE, kind=c_int32_t)
+      return
+    end if
+
+    status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
+    if (status_code /= MIZU_STATUS_OK) then
+      mizu_session_decode_step = int(status_code, kind=c_int32_t)
       return
     end if
 

@@ -48,6 +48,8 @@ Current implementation status:
 - the session cache now applies a 16-record KV-retention and safe-eviction
   policy at runtime for checkpointed parked live-context records, protecting
   live or uncheckpointed resident state from cache eviction
+- decode now enforces a positive per-session `max_decode_tokens` limit with a
+  terminal `MIZU_STATUS_END_OF_SEQUENCE` result and `TOKEN_BUDGET` reason
 - the multimodal cache now has a module-level reuse policy that separates
   device-reusable preprocessing outputs from device/projector-bound projector
   embedding outputs, with explicit invalidation reasons for content,

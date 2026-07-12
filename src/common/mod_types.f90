@@ -391,6 +391,7 @@ module mod_types
     integer(i64)                      :: staged_token_count  = 0_i64
     integer(i64)                      :: staged_token_hash   = 0_i64
     integer(i32), allocatable         :: staged_tokens(:)
+    integer(i64)                      :: decoded_token_count = 0_i64
     integer(i64)                      :: last_output_token_count = 0_i64
     integer(i32)                      :: last_output_tokens(MAX_RECENT_OUTPUT_TOKENS) = 0_i32
     integer(i32)                      :: staged_modal_count  = 0_i32

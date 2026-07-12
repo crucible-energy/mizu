@@ -16,9 +16,9 @@ module mod_session
   public :: validate_attach_tokens, validate_attach_modal_input
   public :: validate_clear_pending_inputs, validate_prefill
   public :: validate_decode, validate_park, validate_resume
-  public :: validate_read_output
+  public :: validate_read_output, decode_token_limit_reached
   public :: stage_tokens, stage_modal_input, clear_pending_inputs
-  public :: complete_prefill, complete_decode
+  public :: complete_prefill, complete_decode, complete_decode_terminal
   public :: store_live_context_record, update_live_context_record, offload_live_context_record
   public :: park_session_state, resume_session_state
   public :: evict_parked_session, build_session_info
@@ -35,6 +35,7 @@ contains
     session%live_context_hash  = 0_i64
     call clear_live_context_record(session)
     call clear_staged_inputs_state(session)
+    session%decoded_token_count = 0_i64
     session%last_output_token_count = 0_i64
     session%last_output_tokens = 0_i32
     session%last_stop_reason   = MIZU_STOP_REASON_NONE
@@ -55,6 +56,7 @@ contains
     session%kv_token_count        = 0_i64
     session%live_context_hash     = 0_i64
     call clear_live_context_record(session)
+    session%decoded_token_count   = 0_i64
     session%last_output_token_count = 0_i64
     session%last_output_tokens    = 0_i32
     session%last_stop_reason      = MIZU_STOP_REASON_NONE
@@ -160,6 +162,13 @@ contains
       status_code = MIZU_STATUS_OK
     end if
   end function validate_read_output
+
+  pure logical function decode_token_limit_reached(session) result(is_reached)
+    type(session_state), intent(in) :: session
+
+    is_reached = session%config%max_decode_tokens > 0_i64 .and. &
+      session%decoded_token_count >= session%config%max_decode_tokens
+  end function decode_token_limit_reached
 
   subroutine stage_tokens(session, token_count, status_code, token_values)
     type(session_state), intent(inout) :: session
@@ -303,6 +312,7 @@ contains
     end if
 
     session%kv_token_count        = session%kv_token_count + emitted_token_count
+    session%decoded_token_count   = session%decoded_token_count + emitted_token_count
     session%last_output_token_count = emitted_token_count
     session%has_decode_result     = .true.
     session%last_output_tokens    = 0_i32
@@ -324,6 +334,20 @@ contains
     call update_live_context_after_decode(session, emitted_token_count, session%last_stop_reason, &
       session%last_output_tokens)
   end subroutine complete_decode
+
+  subroutine complete_decode_terminal(session, stop_reason, status_code)
+    type(session_state), intent(inout) :: session
+    integer(i32), intent(in)           :: stop_reason
+    integer(i32), intent(out)          :: status_code
+
+    status_code = validate_decode(session)
+    if (status_code /= MIZU_STATUS_OK) return
+
+    session%last_output_token_count = 0_i64
+    session%last_output_tokens = 0_i32
+    session%last_stop_reason = stop_reason
+    session%has_decode_result = .true.
+  end subroutine complete_decode_terminal
 
   subroutine park_session_state(session, status_code)
     type(session_state), intent(inout) :: session

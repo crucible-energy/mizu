@@ -123,7 +123,7 @@ int main(void) {
     session_config.struct_size = sizeof(session_config);
     session_config.abi_version = mizu_get_abi_version();
     session_config.max_context_tokens = 4096;
-    session_config.max_decode_tokens = 128;
+    session_config.max_decode_tokens = 1;
     session_config.sampler_kind = MIZU_SAMPLER_KIND_GREEDY;
     session_config.session_flags = MIZU_SESSION_FLAG_NONE;
 
@@ -875,6 +875,30 @@ int main(void) {
     status = mizu_session_read_output(session, &output_buffer);
     if (!expect_status("read output should reject undersized byte buffer", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("read output should report required byte count", output_buffer.bytes_written == sizeof(int32_t))) return 1;
+
+    memset(report_storage, 0, sizeof(report_storage));
+    memset(&report_buffer, 0, sizeof(report_buffer));
+    report_buffer.struct_size = sizeof(report_buffer);
+    report_buffer.reports = report_storage;
+    report_buffer.report_capacity = 1;
+    memset(&decode_result, 0, sizeof(decode_result));
+    decode_result.struct_size = sizeof(decode_result);
+    decode_result.token_capacity = 0;
+    decode_result.token_count = 9;
+    decode_result.stop_reason = MIZU_STOP_REASON_NONE;
+    decode_result.result_flags = UINT64_C(9);
+    status = mizu_session_decode_step(session, &decode_options, &decode_result, &report_buffer);
+    if (!expect_status("decode should stop at configured token limit", status, MIZU_STATUS_END_OF_SEQUENCE)) return 1;
+    if (!expect_true("terminal decode should publish no tokens and token-budget stop reason",
+                     decode_result.token_count == 0 &&
+                     decode_result.stop_reason == MIZU_STOP_REASON_TOKEN_BUDGET &&
+                     decode_result.result_flags == 0)) return 1;
+    if (!expect_true("terminal decode should not publish a stage report", report_buffer.report_count == 0)) return 1;
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(session, &session_info);
+    if (!expect_status("session info after terminal decode", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("terminal decode should not advance kv tokens", session_info.kv_token_count == 2)) return 1;
 
     memset(report_storage, 0, sizeof(report_storage));
     memset(&report_buffer, 0, sizeof(report_buffer));

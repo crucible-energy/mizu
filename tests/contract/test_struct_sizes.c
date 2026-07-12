@@ -29,6 +29,7 @@ int main(void) {
     mizu_model_t *model = NULL;
     mizu_model_t *bad_model = NULL;
     mizu_session_t *session = NULL;
+    mizu_session_t *limited_session = NULL;
     mizu_session_t *bad_session = NULL;
     mizu_status_code_t status;
     mizu_runtime_config_t runtime_config;
@@ -1062,6 +1063,26 @@ int main(void) {
     if (!expect_status("session report should reject short struct", status, MIZU_STATUS_BUFFER_TOO_SMALL)) return 1;
     if (!expect_true("session report short-struct failure should preserve caller bytes",
                      memcmp(&report, expected_report_bytes, sizeof(report)) == 0)) return 1;
+
+    session_config.max_context_tokens = 1;
+    session_config.max_decode_tokens = 1;
+    status = mizu_session_open(model, &session_config, &limited_session);
+    if (!expect_status("limited session open", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_tokens(limited_session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("limited session first token attach", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_attach_tokens(limited_session, prefill_tokens, 1, MIZU_ATTACH_FLAG_NONE);
+    if (!expect_status("limited session second token attach", status, MIZU_STATUS_OK)) return 1;
+    status = mizu_session_prefill(limited_session, NULL);
+    if (!expect_status("prefill should reject context overflow", status, MIZU_STATUS_INVALID_ARGUMENT)) return 1;
+    memset(&session_info, 0, sizeof(session_info));
+    session_info.struct_size = sizeof(session_info);
+    status = mizu_session_get_info(limited_session, &session_info);
+    if (!expect_status("limited session info after context overflow", status, MIZU_STATUS_OK)) return 1;
+    if (!expect_true("context overflow should preserve staged tokens and kv state",
+                     session_info.kv_token_count == 0 && session_info.staged_token_count == 2 &&
+                     (session_info.session_state_flags & MIZU_SESSION_STATE_PENDING_INPUTS) != 0)) return 1;
+    status = mizu_session_close(limited_session);
+    if (!expect_status("limited session close", status, MIZU_STATUS_OK)) return 1;
 
     status = mizu_session_close(session);
     if (!expect_status("session close", status, MIZU_STATUS_OK)) return 1;

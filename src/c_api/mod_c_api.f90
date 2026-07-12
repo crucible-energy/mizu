@@ -92,6 +92,10 @@ module mod_c_api
                                 record_session_artifact_metadata, record_multimodal_artifact_metadata, &
                                 lookup_session_artifact_metadata, load_runtime_cache_bundle, &
                                 save_runtime_cache_bundle
+  use mod_session_cache,  only: runtime_session_cache, session_cache_record, &
+                                initialize_runtime_session_cache, reset_runtime_session_cache, &
+                                record_session_cache_entry, mark_session_cache_entry_live, &
+                                evict_one_inactive_session_cache_entry, active_session_cache_entry_count
 
   implicit none
 
@@ -109,6 +113,7 @@ module mod_c_api
 
   integer(i64), parameter :: INITIAL_REGISTRY_CAPACITY = 8_i64
   integer(i64), parameter :: MAX_RETIRED_HANDLE_BOXES_PER_KIND = 4096_i64
+  integer(i32), parameter :: MAX_PARKED_SESSION_CACHE_ENTRIES = 16_i32
   integer(i32), parameter :: MAX_IMPORT_STAGE_PACK_DISPATCH = 4_i32
   integer(i32), parameter :: MAX_CUDA_PACK_PAGE_WORDS = 8_i32
   integer(i32), parameter :: MAX_CUDA_PACK_TILE_BYTES = 32_i32
@@ -236,6 +241,7 @@ module mod_c_api
 
   type(runtime_state), allocatable, target, save :: runtime_registry(:)
   type(runtime_cache_bundle), allocatable, target, save :: runtime_cache_registry(:)
+  type(runtime_session_cache), allocatable, target, save :: runtime_session_cache_registry(:)
   type(runtime_optimization_store), allocatable, target, save :: runtime_optimization_registry(:)
   type(model_state), allocatable, target, save   :: model_registry(:)
   type(session_state), allocatable, target, save :: session_registry(:)
@@ -320,6 +326,7 @@ contains
     slot_id = acquire_runtime_slot()
     call initialize_runtime_state(runtime_registry(slot_id), config)
     call initialize_runtime_cache_bundle(runtime_cache_registry(slot_id))
+    call initialize_runtime_session_cache(runtime_session_cache_registry(slot_id))
     call initialize_runtime_optimization_store(runtime_optimization_registry(slot_id))
     call initialize_runtime_backend_registry(backend_registry)
     call probe_runtime_backend_registry(backend_registry)
@@ -365,6 +372,7 @@ contains
     call persist_runtime_optimization_state(runtime, runtime_optimization_registry(slot_id))
     call reset_runtime_state(runtime)
     call reset_runtime_cache_bundle(runtime_cache_registry(slot_id))
+    call reset_runtime_session_cache(runtime_session_cache_registry(slot_id))
     call reset_runtime_optimization_store(runtime_optimization_registry(slot_id))
     call retire_runtime_box(slot_id, box)
 
@@ -757,6 +765,7 @@ contains
     type(model_state), pointer    :: model
     type(runtime_state), pointer  :: runtime
     type(runtime_cache_bundle), pointer :: runtime_cache
+    type(runtime_session_cache), pointer :: session_cache
     type(runtime_optimization_store), pointer :: optimization_store
     integer(i64) :: cache_flags
     integer(i64) :: stage_plan_id
@@ -800,6 +809,7 @@ contains
       mizu_session_park = int(status_code, kind=c_int32_t)
       return
     end if
+    session_cache => runtime_session_cache_registry(runtime%handle%value)
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
@@ -815,6 +825,7 @@ contains
     end if
     call persist_session_checkpoint(runtime, runtime_cache, model, session, checkpoint_offloaded)
     if (checkpoint_offloaded) call offload_live_context_record(session)
+    call record_parked_session_cache_entry(runtime_cache, session_cache, model, session, checkpoint_offloaded)
 
     stage_elapsed_us = elapsed_since_us(stage_started_us)
     call resolve_session_stage_cache(runtime, runtime_cache, optimization_store, model, session, &
@@ -836,6 +847,7 @@ contains
     type(model_state), pointer    :: model
     type(runtime_state), pointer  :: runtime
     type(runtime_cache_bundle), pointer :: runtime_cache
+    type(runtime_session_cache), pointer :: session_cache
     type(runtime_optimization_store), pointer :: optimization_store
     integer(i64) :: cache_flags
     integer(i64) :: stage_plan_id
@@ -879,6 +891,7 @@ contains
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
+    session_cache => runtime_session_cache_registry(runtime%handle%value)
 
     status_code = prepare_report_buffer(out_reports_ptr, 1_i64)
     if (status_code /= MIZU_STATUS_OK) then
@@ -900,6 +913,7 @@ contains
       mizu_session_resume = int(status_code, kind=c_int32_t)
       return
     end if
+    call mark_resumed_session_cache_entry(session_cache, model, session)
 
     stage_elapsed_us = elapsed_since_us(stage_started_us)
     call resolve_session_stage_cache(runtime, runtime_cache, optimization_store, model, session, &
@@ -1663,6 +1677,7 @@ contains
     integer(i64), intent(in) :: required_capacity
     type(runtime_state), allocatable :: new_registry(:)
     type(runtime_cache_bundle), allocatable :: new_cache_registry(:)
+    type(runtime_session_cache), allocatable :: new_session_cache_registry(:)
     type(runtime_optimization_store), allocatable :: new_optimization_registry(:)
     type(c_ptr), allocatable         :: new_handle_ptrs(:)
     logical, allocatable             :: new_used(:)
@@ -1671,10 +1686,12 @@ contains
     if (.not. allocated(runtime_registry)) then
       new_capacity = max(INITIAL_REGISTRY_CAPACITY, required_capacity)
       allocate(runtime_registry(new_capacity), runtime_cache_registry(new_capacity), &
+               runtime_session_cache_registry(new_capacity), &
                runtime_optimization_registry(new_capacity), runtime_handle_ptrs(new_capacity), &
                runtime_used(new_capacity))
       runtime_registry = runtime_state()
       runtime_cache_registry = runtime_cache_bundle()
+      runtime_session_cache_registry = runtime_session_cache()
       runtime_optimization_registry = runtime_optimization_store()
       runtime_handle_ptrs = c_null_ptr
       runtime_used     = .false.
@@ -1686,20 +1703,24 @@ contains
 
     new_capacity = max(required_capacity, 2_i64 * current_capacity)
     allocate(new_registry(new_capacity), new_cache_registry(new_capacity), &
+             new_session_cache_registry(new_capacity), &
              new_optimization_registry(new_capacity), &
              new_handle_ptrs(new_capacity), new_used(new_capacity))
     new_registry = runtime_state()
     new_cache_registry = runtime_cache_bundle()
+    new_session_cache_registry = runtime_session_cache()
     new_optimization_registry = runtime_optimization_store()
     new_handle_ptrs = c_null_ptr
     new_used     = .false.
     new_registry(1:current_capacity) = runtime_registry
     new_cache_registry(1:current_capacity) = runtime_cache_registry
+    new_session_cache_registry(1:current_capacity) = runtime_session_cache_registry
     new_optimization_registry(1:current_capacity) = runtime_optimization_registry
     new_handle_ptrs(1:current_capacity) = runtime_handle_ptrs
     new_used(1:current_capacity)     = runtime_used
     call move_alloc(new_registry, runtime_registry)
     call move_alloc(new_cache_registry, runtime_cache_registry)
+    call move_alloc(new_session_cache_registry, runtime_session_cache_registry)
     call move_alloc(new_optimization_registry, runtime_optimization_registry)
     call move_alloc(new_handle_ptrs, runtime_handle_ptrs)
     call move_alloc(new_used, runtime_used)
@@ -3240,6 +3261,67 @@ contains
     write(checkpoint_key_text, '(A,":ctx_hash=",I0,":kv=",I0,":ctx_bytes=",I0)') trim(checkpoint_key%key_text), &
       session%live_context_hash, session%kv_token_count, session%live_context_byte_count
   end subroutine build_session_checkpoint_key
+
+  subroutine record_parked_session_cache_entry(runtime_cache, session_cache, model, session, checkpoint_ready)
+    type(runtime_cache_bundle), intent(in)        :: runtime_cache
+    type(runtime_session_cache), intent(inout)    :: session_cache
+    type(model_state), intent(in)                  :: model
+    type(session_state), intent(inout)             :: session
+    logical, intent(in)                            :: checkpoint_ready
+    type(session_cache_key)                        :: cache_key
+    type(session_cache_record)                     :: evicted_record
+    type(artifact_metadata_record)                 :: checkpoint_metadata
+    character(len=MAX_CACHE_KEY_LEN)               :: checkpoint_key_text
+    integer(i32)                                   :: status_code
+    integer(i64)                                   :: evicted_session_id
+    logical                                        :: found
+
+    if (.not. checkpoint_ready) return
+
+    call build_session_checkpoint_key(model, session, checkpoint_key_text)
+    if (len_trim(checkpoint_key_text) == 0) return
+    call lookup_session_artifact_metadata(runtime_cache, trim(checkpoint_key_text), checkpoint_metadata, found)
+    if (.not. found .or. .not. checkpoint_metadata%is_materialized) return
+
+    call build_tracked_session_cache_key(model, session, cache_key)
+    call record_session_cache_entry(session_cache, cache_key, session, checkpoint_metadata, status_code)
+    if (status_code /= MIZU_STATUS_OK) return
+
+    if (active_session_cache_entry_count(session_cache) <= MAX_PARKED_SESSION_CACHE_ENTRIES) return
+    call evict_one_inactive_session_cache_entry(session_cache, evicted_record, found)
+    if (.not. found) return
+
+    evicted_session_id = evicted_record%session_owner%value
+    if (.not. is_session_slot_valid(evicted_session_id)) return
+    if (.not. session_registry(evicted_session_id)%is_parked) return
+    call evict_parked_session(session_registry(evicted_session_id))
+  end subroutine record_parked_session_cache_entry
+
+  subroutine mark_resumed_session_cache_entry(session_cache, model, session)
+    type(runtime_session_cache), intent(inout) :: session_cache
+    type(model_state), intent(in)              :: model
+    type(session_state), intent(in)            :: session
+    type(session_cache_key)                    :: cache_key
+    integer(i32)                               :: status_code
+
+    call build_tracked_session_cache_key(model, session, cache_key)
+    call mark_session_cache_entry_live(session_cache, cache_key, .true., status_code)
+  end subroutine mark_resumed_session_cache_entry
+
+  subroutine build_tracked_session_cache_key(model, session, cache_key)
+    type(model_state), intent(in)        :: model
+    type(session_state), intent(in)      :: session
+    type(session_cache_key), intent(out) :: cache_key
+    type(model_manifest)                 :: manifest
+    character(len=32)                    :: session_identity
+
+    call populate_manifest_identity(model, manifest)
+    call build_session_cache_key(manifest, "checkpoint", session%live_context_backend_family, &
+      session%live_context_execution_route, session%config%max_context_tokens, &
+      session%config%max_decode_tokens, cache_key)
+    write(session_identity, '(I0)') session%handle%value
+    cache_key%key_text = trim(cache_key%key_text) // ":session=" // trim(session_identity)
+  end subroutine build_tracked_session_cache_key
 
   subroutine build_session_checkpoint_payload_text(session, payload_text, payload_bytes)
     type(session_state), intent(in)       :: session

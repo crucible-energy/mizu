@@ -14,7 +14,7 @@ module mod_session_cache
   public :: record_session_cache_entry, lookup_session_cache_entry
   public :: mark_session_cache_entry_live, evict_one_inactive_session_cache_entry
   public :: session_cache_key_is_strict, session_cache_record_is_evictable
-  public :: session_cache_retention_score
+  public :: session_cache_retention_score, active_session_cache_entry_count
 
   integer(i32), parameter :: INITIAL_SESSION_CACHE_CAPACITY = 16_i32
 
@@ -221,6 +221,18 @@ contains
       max(0_i64, record%hit_count) * 100_i64 + &
       max(0_i64, record%last_access_tick)
   end function session_cache_retention_score
+
+  pure integer(i32) function active_session_cache_entry_count(cache) result(entry_count)
+    type(runtime_session_cache), intent(in) :: cache
+    integer(i32)                            :: entry_index
+
+    entry_count = 0_i32
+    if (.not. allocated(cache%entries)) return
+
+    do entry_index = 1_i32, cache%entry_count
+      if (.not. cache%entries(entry_index)%is_evicted) entry_count = entry_count + 1_i32
+    end do
+  end function active_session_cache_entry_count
 
   pure logical function session_matches_key(session, key) result(matches)
     type(session_state), intent(in)     :: session

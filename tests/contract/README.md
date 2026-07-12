@@ -11,6 +11,11 @@ These suites cover the `API-C*` portion of
   - header compiles as C++
 - `test_opaque_handles.c`
   - confirms consumers only see opaque handle declarations
+- `test_session_eviction.c`
+  - parks checkpointed sessions through the public C API until the bounded
+    retention policy evicts the oldest safe record
+  - verifies the evicted session returns `MIZU_STATUS_SESSION_EVICTED` while
+    a newer parked session remains resumable
 - `test_backend_availability.c`
   - forces backend-availability overrides through the public API
   - verifies `mizu_model_open` fails early with `MIZU_STATUS_NO_VALID_PLAN`

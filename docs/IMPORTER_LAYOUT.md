@@ -170,14 +170,14 @@ That tooling should produce:
 
 The first concrete tool is:
 
-- `tools/import/hf_safetensors_to_mizu.py`
-- `tools/import/gguf_to_mizu.py`
+- `tools/import/hf_safetensors_to_mizu.zig`
+- `tools/import/gguf_to_mizu.zig`
 
 The safetensors importer reads local HuggingFace-style `.safetensors` headers
-directly with the Python standard library, classifies common Qwen/Gemma
-tensor-name patterns into Mizu tensor roles, writes the bundle files above, and
-symlinks or copies source shards under `mizu_import/weights/` so loader
-validation can continue to reject unsafe external paths.
+directly in Zig, classifies common Qwen/Gemma tensor-name patterns into Mizu
+tensor roles, writes the bundle files above, and symlinks or copies source
+shards under `mizu_import/weights/` so loader validation can continue to reject
+unsafe external paths.
 
 The GGUF importer reads GGUF metadata and tensor-info headers directly, can
 pair a model GGUF with an optional mmproj GGUF, writes the same loader-facing

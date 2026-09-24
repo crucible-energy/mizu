@@ -93,7 +93,7 @@ is_excluded() {
 
 is_text_candidate() {
   case "$1" in
-    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.tsv|*.mizu|*.sh|*.bash|*.zsh|*.py|*.f90|*.F90|*.f|*.F|*.c|*.h|*.cc|*.cpp|*.cxx|*.hpp|*.m|*.mm|*.cu|*.cuh|*.go|*.gitignore|*.gitattributes|*.editorconfig|Makefile|*.mk|README|README.*|.githooks/*)
+    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.tsv|*.mizu|*.sh|*.bash|*.zsh|*.zig|*.f90|*.F90|*.f|*.F|*.c|*.h|*.cc|*.cpp|*.cxx|*.hpp|*.m|*.mm|*.cu|*.cuh|*.go|*.gitignore|*.gitattributes|*.editorconfig|Makefile|*.mk|README|README.*|.githooks/*)
       return 0
       ;;
   esac

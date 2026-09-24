@@ -1,6 +1,6 @@
 # Mizu Safety Audit
 
-Last reviewed: July 4, 2026
+Last reviewed: September 24, 2026
 
 This document records the current safety posture for the repo's active runtime,
 bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
@@ -11,6 +11,8 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
   CUDA bridge seams.
 - Covers memory ownership, opaque-handle lifetime, and current concurrency
   limits.
+- Covers the Zig safetensors and GGUF model-import boundaries, including
+  parser limits, source-root containment, and generated output handling.
 - Does not claim real transformer-math correctness; placeholder execution is a
   separate concern.
 - Does not claim thread-safe concurrent lifecycle mutation today.
@@ -55,6 +57,19 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
 - Current Apple and CUDA execution paths are placeholder backends, but their
   ownership seams are explicit rather than hidden behind borrowed global state.
 
+### Model Import Boundaries
+
+- Safetensors and GGUF headers are parsed by the Zig import tools without
+  loading tensor payloads into memory. Header and record counts have explicit
+  limits, and malformed or unsupported input fails before output generation.
+- Indexed safetensors shards are canonicalized and constrained to the selected
+  model root. Output files are created relative to opened output directories;
+  generated subdirectories do not follow symlinks, and existing files require
+  `--force` before replacement.
+- Importer fixtures cover malformed and oversized headers, traversal and
+  symlink escapes, deterministic bundles, force behavior, and copy/symlink
+  materialization.
+
 ### Concurrency And Data Races
 
 - The repo currently relies on single-threaded mutation of runtime, model, and
@@ -73,9 +88,9 @@ bridge, and C ABI seams. It is a review aid, not a release-readiness claim.
   - `./scripts/format-local.sh --all --check`
   - `git diff --check`
   - `make test`
-  - [tests/tooling/test_format_local.py](../tests/tooling/test_format_local.py)
-  - [tests/tooling/test_gguf_to_mizu.py](../tests/tooling/test_gguf_to_mizu.py)
-  - [tests/tooling/test_hf_safetensors_to_mizu.py](../tests/tooling/test_hf_safetensors_to_mizu.py)
+  - [tests/tooling/test_importers.zig](../tests/tooling/test_importers.zig)
+  - [tests/tooling/test_devtools.zig](../tests/tooling/test_devtools.zig)
+  - Zig unit tests for `tools/import/mizu_importer.zig`
 - The contract and unit coverage exercised in this pass includes:
   - [tests/contract/test_handle_lifecycle.c](../tests/contract/test_handle_lifecycle.c)
   - [tests/contract/test_modal_input_validation.c](../tests/contract/test_modal_input_validation.c)

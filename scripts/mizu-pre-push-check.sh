@@ -10,7 +10,6 @@ cd "$repo_root"
 branch="$(git branch --show-current)"
 allow_main_push="${MIZU_ALLOW_MAIN_PUSH:-}"
 zero_oid='0000000000000000000000000000000000000000'
-push_lines=()
 needs_debug_check=0
 debug_reason_path=''
 
@@ -53,7 +52,6 @@ mark_debug_check_if_needed() {
 
 if [[ ! -t 0 ]]; then
   while read -r local_ref local_sha remote_ref remote_sha; do
-    push_lines+=("${local_ref} ${local_sha} ${remote_ref} ${remote_sha}")
     if [[ "$remote_ref" == "refs/heads/main" && "$allow_main_push" != "1" ]]; then
       echo "Refusing push to main (${local_ref} -> ${remote_ref}). Use a feature branch." >&2
       exit 2
@@ -61,6 +59,9 @@ if [[ ! -t 0 ]]; then
     if [[ "$local_ref" == "refs/heads/main" && "$allow_main_push" != "1" ]]; then
       echo "Refusing push from main (${local_ref} -> ${remote_ref}). Use a feature branch." >&2
       exit 2
+    fi
+    if [[ "$needs_debug_check" -eq 0 ]]; then
+      mark_debug_check_if_needed "$local_ref" "$local_sha" "$remote_sha"
     fi
   done
 fi
@@ -73,13 +74,6 @@ fi
 ./scripts/format-local.sh --all --check
 git diff --check
 make test
-if [[ ! -t 0 ]]; then
-  for push_line in "${push_lines[@]}"; do
-    read -r local_ref local_sha remote_ref remote_sha <<<"$push_line"
-    mark_debug_check_if_needed "$local_ref" "$local_sha" "$remote_sha"
-    [[ "$needs_debug_check" -eq 0 ]] || break
-  done
-fi
 if [[ "$needs_debug_check" -eq 1 ]]; then
   echo "Escalating to make check-debug for sensitive path: ${debug_reason_path}"
   make check-debug

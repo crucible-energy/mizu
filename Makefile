@@ -3,6 +3,7 @@ CC ?= gcc
 CXX ?= g++
 NVCC ?= nvcc
 OBJC ?= clang
+ZIG ?= zig
 UNAME_S := $(shell uname -s)
 
 FFLAGS ?= -std=f2018 -Wall -Wextra
@@ -17,6 +18,10 @@ HAVE_NVCC := $(shell command -v $(NVCC) >/dev/null 2>&1 && echo 1 || echo 0)
 
 BUILD_DIR := build
 TEST_DIR := $(BUILD_DIR)/tests
+MIZU_GGUF_IMPORTER := $(TEST_DIR)/gguf_to_mizu
+MIZU_SAFETENSORS_IMPORTER := $(TEST_DIR)/hf_safetensors_to_mizu
+MIZU_IMPORTER_TEST_BIN := $(TEST_DIR)/test_importers
+MIZU_DEVTOOLS_TEST_BIN := $(TEST_DIR)/test_devtools
 CUDA_BRIDGE_OBJ := $(BUILD_DIR)/cuda_bridge.o
 APPLE_BRIDGE_OBJ := $(BUILD_DIR)/apple_bridge.o
 
@@ -95,14 +100,6 @@ CONTRACT_BINS := \
 	$(TEST_DIR)/test_qwench_gguf_cuda_smoke \
 	$(TEST_DIR)/test_stage_reports
 
-TOOL_TESTS := \
-	tests/tooling/test_format_local.py \
-	tests/tooling/test_pre_commit_hook.py \
-	tests/tooling/test_pre_push_check.py \
-	tests/tooling/test_pre_push_hook.py \
-	tests/tooling/test_gguf_to_mizu.py \
-	tests/tooling/test_hf_safetensors_to_mizu.py
-
 .PHONY: all hooks format format-check check-local check-debug test unit-tests contract-tests contract-smokes tool-tests clean FORCE
 
 all: test
@@ -112,9 +109,11 @@ hooks:
 
 format:
 	./scripts/format-local.sh --all --write
+	$(ZIG) fmt $$(git ls-files -co --exclude-standard '*.zig')
 
 format-check:
 	./scripts/format-local.sh --all --check
+	$(ZIG) fmt --check $$(git ls-files -co --exclude-standard '*.zig')
 
 check-local: format-check
 	git diff --check
@@ -132,19 +131,37 @@ unit-tests: $(UNIT_BINS)
 		$$test_bin || exit $$?; \
 	done
 
-contract-tests: contract-smokes $(CONTRACT_BINS)
+contract-tests: contract-smokes $(CONTRACT_BINS) $(MIZU_GGUF_IMPORTER) $(MIZU_IMPORTER_TEST_BIN)
 	@set -e; for test_bin in $(CONTRACT_BINS); do \
 		echo "running $$test_bin"; \
+		MIZU_GGUF_IMPORTER="$(abspath $(MIZU_GGUF_IMPORTER))" \
+		MIZU_IMPORTER_TEST_BIN="$(abspath $(MIZU_IMPORTER_TEST_BIN))" \
 		$$test_bin || exit $$?; \
 	done
 
 contract-smokes: $(CONTRACT_SMOKES)
 
-tool-tests:
-	@set -e; for test_script in $(TOOL_TESTS); do \
-		echo "running $$test_script"; \
-		python3 $$test_script || exit $$?; \
-	done
+tool-tests: $(MIZU_GGUF_IMPORTER) $(MIZU_SAFETENSORS_IMPORTER) $(MIZU_IMPORTER_TEST_BIN) $(MIZU_DEVTOOLS_TEST_BIN)
+	@echo "running Zig importer unit tests"; \
+	$(ZIG) test tools/import/mizu_importer.zig
+	@echo "running Zig importer integration tests"; \
+	$(MIZU_IMPORTER_TEST_BIN) "$(abspath $(MIZU_GGUF_IMPORTER))" \
+		"$(abspath $(MIZU_SAFETENSORS_IMPORTER))" \
+		"$$(mktemp -d "$${TMPDIR:-/tmp}/mizu-importers.XXXXXX")"
+	@echo "running Zig developer-tool integration tests"; \
+	$(MIZU_DEVTOOLS_TEST_BIN) "$$(mktemp -d "$${TMPDIR:-/tmp}/mizu-devtools.XXXXXX")"
+
+$(MIZU_GGUF_IMPORTER): tools/import/gguf_to_mizu.zig tools/import/mizu_importer.zig | $(TEST_DIR)
+	$(ZIG) build-exe tools/import/gguf_to_mizu.zig -femit-bin=$@
+
+$(MIZU_SAFETENSORS_IMPORTER): tools/import/hf_safetensors_to_mizu.zig tools/import/mizu_importer.zig | $(TEST_DIR)
+	$(ZIG) build-exe tools/import/hf_safetensors_to_mizu.zig -femit-bin=$@
+
+$(MIZU_IMPORTER_TEST_BIN): tests/tooling/test_importers.zig | $(TEST_DIR)
+	$(ZIG) build-exe tests/tooling/test_importers.zig -femit-bin=$@
+
+$(MIZU_DEVTOOLS_TEST_BIN): tests/tooling/test_devtools.zig | $(TEST_DIR)
+	$(ZIG) build-exe tests/tooling/test_devtools.zig -femit-bin=$@
 
 FORCE:
 

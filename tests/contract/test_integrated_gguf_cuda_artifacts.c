@@ -4,8 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "mizu.h"
+
+extern char *mkdtemp(char *template);
 
 static int expect_status(const char *label, mizu_status_code_t actual, mizu_status_code_t expected) {
     if (actual != expected) {
@@ -140,8 +143,12 @@ static int run_session_smoke(mizu_model_t *model) {
 }
 
 int main(void) {
-    const char *persist_root = "/tmp/mizu_integrated_gguf_cuda_artifacts";
-    const char *bundle_root = "/tmp/mizu_integrated_gguf_cuda_artifacts/bundle";
+    char persist_root[] = "/tmp/mizu_integrated_gguf_cuda_artifacts.XXXXXX";
+    char cache_root[4096];
+    char bundle_root[4096];
+    char import_log[4096];
+    const char *importer_path = getenv("MIZU_GGUF_IMPORTER");
+    const char *fixture_writer = getenv("MIZU_IMPORTER_TEST_BIN");
     char command[8192];
     mizu_runtime_t *runtime = NULL;
     mizu_model_t *model = NULL;
@@ -150,93 +157,34 @@ int main(void) {
     int command_status;
     int ok = 1;
 
-    if (!run_command("integrated gguf smoke root setup",
-                     "rm -rf /tmp/mizu_integrated_gguf_cuda_artifacts && "
-                     "mkdir -p /tmp/mizu_integrated_gguf_cuda_artifacts/cache")) {
+    if (importer_path == NULL || fixture_writer == NULL) {
+        fprintf(stderr, "MIZU_GGUF_IMPORTER and MIZU_IMPORTER_TEST_BIN are required\n");
         return 1;
     }
+    if (mkdtemp(persist_root) == NULL ||
+        snprintf(cache_root, sizeof(cache_root), "%s/cache", persist_root) >= (int)sizeof(cache_root) ||
+        snprintf(bundle_root, sizeof(bundle_root), "%s/bundle", persist_root) >= (int)sizeof(bundle_root) ||
+        snprintf(import_log, sizeof(import_log), "%s/import.log", persist_root) >= (int)sizeof(import_log) ||
+        mkdir(cache_root, 0700) != 0) {
+        perror("integrated gguf temporary root setup");
+        return 1;
+    }
+    printf("test_integrated_gguf_cuda_artifacts: artifacts: %s\n", persist_root);
 
-    if (!run_command(
-            "integrated gguf fixture write",
-            "python3 - <<'PY'\n"
-            "from pathlib import Path\n"
-            "import struct\n"
-            "VALUE_TYPES = {'uint32': 4, 'bool': 7, 'string': 8}\n"
-            "GGML_TYPES = {'F32': 0, 'F16': 1, 'Q4_K': 12, 'Q5_K': 13}\n"
-            "GGML_QUANT_SIZES = {'F32': (1, 4), 'F16': (1, 2), 'Q4_K': (256, 144), 'Q5_K': (256, 176)}\n"
-            "path = Path('/tmp/mizu_integrated_gguf_cuda_artifacts/qwen35_integrated.gguf')\n"
-            "metadata = {\n"
-            "    'general.architecture': ('string', 'qwen35'),\n"
-            "    'general.name': ('string', 'Qwen3.5 9B Integrated'),\n"
-            "    'general.type': ('string', 'model'),\n"
-            "    'general.file_type': ('uint32', 15),\n"
-            "    'general.quantization_version': ('uint32', 2),\n"
-            "    'clip.has_vision_encoder': ('bool', True),\n"
-            "}\n"
-            "tensors = [\n"
-            "    ('token_embd.weight', [4096, 248320], 'Q4_K', 0),\n"
-            "    ('blk.0.attn_qkv.weight', [4096, 8192], 'Q5_K', 128),\n"
-            "    ('output_norm.weight', [4096], 'F32', 256),\n"
-            "    ('output.weight', [4096, 248320], 'Q4_K', 384),\n"
-            "    ('v.blk.0.attn_qkv.weight', [1152, 3456], 'F16', 512),\n"
-            "    ('mm.0.weight', [1152, 4096], 'F16', 640),\n"
-            "    ('mm.2.bias', [4096], 'F32', 768),\n"
-            "]\n"
-            "def write_string(handle, text):\n"
-            "    encoded = text.encode('utf-8')\n"
-            "    handle.write(struct.pack('<Q', len(encoded)))\n"
-            "    handle.write(encoded)\n"
-            "def tensor_nbytes(shape, ggml_type):\n"
-            "    block_elements, block_bytes = GGML_QUANT_SIZES[ggml_type]\n"
-            "    row_elements = shape[0]\n"
-            "    row_bytes = (row_elements // block_elements) * block_bytes\n"
-            "    total_rows = 1\n"
-            "    for dim in shape[1:]:\n"
-            "        total_rows *= dim\n"
-            "    return total_rows * row_bytes\n"
-            "with path.open('wb') as handle:\n"
-            "    handle.write(b'GGUF')\n"
-            "    handle.write(struct.pack('<I', 3))\n"
-            "    handle.write(struct.pack('<Q', len(tensors)))\n"
-            "    handle.write(struct.pack('<Q', len(metadata)))\n"
-            "    for key, (value_type, value) in metadata.items():\n"
-            "        write_string(handle, key)\n"
-            "        handle.write(struct.pack('<I', VALUE_TYPES[value_type]))\n"
-            "        if value_type == 'string':\n"
-            "            write_string(handle, str(value))\n"
-            "        elif value_type == 'bool':\n"
-            "            handle.write(struct.pack('<?', bool(value)))\n"
-            "        elif value_type == 'uint32':\n"
-            "            handle.write(struct.pack('<I', int(value)))\n"
-            "        else:\n"
-            "            raise RuntimeError(value_type)\n"
-            "    for name, shape, ggml_type, offset in tensors:\n"
-            "        write_string(handle, name)\n"
-            "        handle.write(struct.pack('<I', len(shape)))\n"
-            "        for dim in shape:\n"
-            "            handle.write(struct.pack('<Q', dim))\n"
-            "        handle.write(struct.pack('<I', GGML_TYPES[ggml_type]))\n"
-            "        handle.write(struct.pack('<Q', offset))\n"
-            "    alignment = 32\n"
-            "    padding = (-handle.tell()) % alignment\n"
-            "    if padding:\n"
-            "        handle.write(b'\\0' * padding)\n"
-            "    payload_bytes = 0\n"
-            "    for _, shape, ggml_type, offset in tensors:\n"
-            "        payload_bytes = max(payload_bytes, offset + tensor_nbytes(shape, ggml_type))\n"
-            "    handle.write(b'\\0' * payload_bytes)\n"
-            "PY")) {
+    snprintf(command, sizeof(command), "'%s' --write-integrated-gguf '%s/qwen35_integrated.gguf'",
+             fixture_writer, persist_root);
+    if (!run_command("integrated gguf fixture write", command)) {
         return 1;
     }
 
     snprintf(command, sizeof(command),
-             "python3 tools/import/gguf_to_mizu.py '%s/qwen35_integrated.gguf' "
-             "--output-root '%s' --link-mode copy --force >/tmp/mizu_integrated_gguf_cuda_artifacts/import.log",
-             persist_root, bundle_root);
+             "'%s' '%s/qwen35_integrated.gguf' "
+             "--output-root '%s' --link-mode copy --force >'%s'",
+             importer_path, persist_root, bundle_root, import_log);
     if (!run_command("integrated gguf import", command)) return 1;
 
-    command_status = system("grep -R \"projector_present = true\" "
-                            "/tmp/mizu_integrated_gguf_cuda_artifacts/bundle/mizu_import/layout.mizu >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"projector_present = true\" '%s/mizu_import/layout.mizu' >/dev/null", bundle_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf import should report projector presence", command_status == 0)) return 1;
 
     if (setenv("MIZU_FORCE_CUDA_AVAILABLE", "1", 1) != 0) {
@@ -247,7 +195,7 @@ int main(void) {
     memset(&runtime_config, 0, sizeof(runtime_config));
     runtime_config.struct_size = sizeof(runtime_config);
     runtime_config.abi_version = mizu_get_abi_version();
-    runtime_config.cache_root_z = "/tmp/mizu_integrated_gguf_cuda_artifacts/cache";
+    runtime_config.cache_root_z = cache_root;
     runtime_config.optimization_mode = MIZU_OPTIMIZATION_MODE_MEASURE_ONLY;
     runtime_config.runtime_flags = MIZU_RUNTIME_FLAG_NONE;
 
@@ -266,20 +214,26 @@ int main(void) {
     if (!expect_status("integrated gguf runtime destroy", status, MIZU_STATUS_OK)) ok = 0;
     if (!ok) return 1;
 
-    command_status = system("grep -R \"pack_count=4\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"pack_count=4\" '%s/artifacts/cuda/cuda/weights' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA decoder weight pack should retain four non-projector tensors",
                      command_status == 0)) return 1;
-    command_status = system("grep -R \"v.blk.0.attn_qkv.weight\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"v.blk.0.attn_qkv.weight\" '%s/artifacts/cuda/cuda/weights' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA decoder weight pack should exclude vision tensors from the shared GGUF file",
                      command_status != 0)) return 1;
-    command_status = system("grep -R \"mm.0.weight\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"mm.0.weight\" '%s/artifacts/cuda/cuda/weights' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA decoder weight pack should exclude projector tensors from the shared GGUF file",
                      command_status != 0)) return 1;
-    command_status = system("grep -R -E \"projector_bytes=[1-9]\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/projector >/dev/null");
+    snprintf(command, sizeof(command), "grep -R -E \"projector_bytes=[1-9]\" '%s/artifacts/cuda/cuda/projector' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA projector artifact should carry projector byte lineage", command_status == 0)) return 1;
-    command_status = system("grep -R \"v.blk.0.attn_qkv.weight\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/projector >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"v.blk.0.attn_qkv.weight\" '%s/artifacts/cuda/cuda/projector' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA projector artifact should retain shared-file vision lineage", command_status == 0)) return 1;
-    command_status = system("grep -R \"mm.0.weight\" /tmp/mizu_integrated_gguf_cuda_artifacts/cache/artifacts/cuda/cuda/projector >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"mm.0.weight\" '%s/artifacts/cuda/cuda/projector' >/dev/null", cache_root);
+    command_status = system(command);
     if (!expect_true("integrated gguf CUDA projector artifact should retain shared-file projector lineage", command_status == 0)) return 1;
 
     printf("test_integrated_gguf_cuda_artifacts: PASS\n");

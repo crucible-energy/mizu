@@ -25,11 +25,11 @@ Current implementation status:
 - model manifests, cache keys, and session flow are implemented as scaffolds
 - the loader now recognizes an optional imported `mizu_import/` bundle with
   validated tensor, modality, and projector inventories
-- `tools/import/hf_safetensors_to_mizu.py` can now scan local
+- `tools/import/hf_safetensors_to_mizu.zig` can now scan local
   HuggingFace-style safetensors model directories and emit a Mizu
   `manifest.mizu` plus `mizu_import/` asset bundle for Qwen/Gemma-shaped
   real-asset smoke testing
-- `tools/import/gguf_to_mizu.py` can now scan local GGUF model assets,
+- `tools/import/gguf_to_mizu.zig` can now scan local GGUF model assets,
   optionally pair a model GGUF with an mmproj GGUF, and emit the same bundle
   shape plus core quantized storage metadata and a GGUF tensor sidecar for
   Qwench-style real-asset smoke testing
@@ -332,4 +332,6 @@ Documentation:
 - [Current State](./docs/CURRENT_STATE.md)
 - [Importer Layout](./docs/IMPORTER_LAYOUT.md)
 - [Placeholder Runtime Status](./docs/PLACEHOLDER_RUNTIME_STATUS.md)
+- [Implementation Log](./docs/IMPLEMENTATION_LOG.md)
+- [Internal-only Evidence Packet](./docs/commercialization/sibling-evidence-packet.json)
 - [Style Guide](./STYLE_GUIDE.md)

@@ -8,6 +8,8 @@
 
 #include "mizu.h"
 
+extern char *mkdtemp(char *template);
+
 static int path_exists(const char *path) {
     struct stat info;
     return path != NULL && stat(path, &info) == 0;
@@ -148,7 +150,16 @@ static int run_qwen_session_smoke(mizu_model_t *model) {
 
 int main(void) {
     const char *home = getenv("HOME");
-    const char *persist_root = "/tmp/mizu_qwench_gguf_cuda_smoke";
+    const char *importer_path = getenv("MIZU_GGUF_IMPORTER");
+    const char *fixture_writer = getenv("MIZU_IMPORTER_TEST_BIN");
+    char persist_root[] = "/tmp/mizu_qwench_gguf_cuda_smoke.XXXXXX";
+    char cache_root[4096];
+    char weights_root[4096];
+    char projector_root[4096];
+    char qwen_bundle_root[4096];
+    char gemma_bundle_root[4096];
+    char qwen_import_log[4096];
+    char gemma_import_log[4096];
     char qwen_model_path[1024];
     char qwen_projector_path[1024];
     char gemma_model_path[1024];
@@ -174,24 +185,40 @@ int main(void) {
         printf("test_qwench_gguf_cuda_smoke: SKIP (Qwench GGUF assets not found)\n");
         return 0;
     }
-
-    if (!run_command("qwench smoke root setup", "rm -rf /tmp/mizu_qwench_gguf_cuda_smoke && mkdir -p /tmp/mizu_qwench_gguf_cuda_smoke/cache")) {
+    if (importer_path == NULL || importer_path[0] == '\0' || fixture_writer == NULL || fixture_writer[0] == '\0') {
+        fprintf(stderr, "MIZU_GGUF_IMPORTER and MIZU_IMPORTER_TEST_BIN are required for the Qwench import smoke\n");
         return 1;
     }
 
+    if (mkdtemp(persist_root) == NULL ||
+        snprintf(cache_root, sizeof(cache_root), "%s/cache", persist_root) >= (int)sizeof(cache_root) ||
+        snprintf(weights_root, sizeof(weights_root), "%s/artifacts/cuda/cuda/weights", cache_root) >= (int)sizeof(weights_root) ||
+        snprintf(projector_root, sizeof(projector_root), "%s/artifacts/cuda/cuda/projector", cache_root) >= (int)sizeof(projector_root) ||
+        snprintf(qwen_bundle_root, sizeof(qwen_bundle_root), "%s/qwen35-9b", persist_root) >= (int)sizeof(qwen_bundle_root) ||
+        snprintf(gemma_bundle_root, sizeof(gemma_bundle_root), "%s/gemma4-26b", persist_root) >= (int)sizeof(gemma_bundle_root) ||
+        snprintf(qwen_import_log, sizeof(qwen_import_log), "%s/qwen_import.log", persist_root) >= (int)sizeof(qwen_import_log) ||
+        snprintf(gemma_import_log, sizeof(gemma_import_log), "%s/gemma_import.log", persist_root) >= (int)sizeof(gemma_import_log) ||
+        mkdir(cache_root, 0700) != 0) {
+        perror("qwench smoke temporary root setup");
+        return 1;
+    }
+    printf("test_qwench_gguf_cuda_smoke: artifacts: %s\n", persist_root);
+
     snprintf(command, sizeof(command),
-             "python3 tools/import/gguf_to_mizu.py '%s' --projector-gguf '%s' "
-             "--output-root '%s/qwen35-9b' --force >/tmp/mizu_qwench_gguf_cuda_smoke/qwen_import.log",
-             qwen_model_path, qwen_projector_path, persist_root);
+             "'%s' '%s' --projector-gguf '%s' "
+             "--output-root '%s' --force >'%s'",
+             importer_path, qwen_model_path, qwen_projector_path, qwen_bundle_root, qwen_import_log);
     if (!run_command("qwench qwen import", command)) return 1;
 
     snprintf(command, sizeof(command),
-             "python3 tools/import/gguf_to_mizu.py '%s' --output-root '%s/gemma4-26b' "
-             "--force >/tmp/mizu_qwench_gguf_cuda_smoke/gemma_import.log",
-             gemma_model_path, persist_root);
+             "'%s' '%s' --output-root '%s' --force >'%s'",
+             importer_path, gemma_model_path, gemma_bundle_root, gemma_import_log);
     if (!run_command("qwench gemma import", command)) return 1;
 
-    command_status = system("awk -F'|' 'NF==9 && $8 ~ /^[0-9][0-9]*$/ && $8 > 0 { found=1 } END { exit found ? 0 : 1 }' /tmp/mizu_qwench_gguf_cuda_smoke/qwen35-9b/mizu_import/gguf_tensors.tsv");
+    snprintf(command, sizeof(command),
+             "awk -F'|' 'NF==9 && $8 ~ /^[0-9][0-9]*$/ && $8 > 0 { found=1 } END { exit found ? 0 : 1 }' '%s/mizu_import/gguf_tensors.tsv'",
+             qwen_bundle_root);
+    command_status = system(command);
     if (!expect_true("qwench import should record absolute GGUF source offsets", command_status == 0)) return 1;
 
     if (setenv("MIZU_FORCE_CUDA_AVAILABLE", "1", 1) != 0) {
@@ -202,21 +229,21 @@ int main(void) {
     memset(&runtime_config, 0, sizeof(runtime_config));
     runtime_config.struct_size = sizeof(runtime_config);
     runtime_config.abi_version = mizu_get_abi_version();
-    runtime_config.cache_root_z = "/tmp/mizu_qwench_gguf_cuda_smoke/cache";
+    runtime_config.cache_root_z = cache_root;
     runtime_config.optimization_mode = MIZU_OPTIMIZATION_MODE_MEASURE_ONLY;
     runtime_config.runtime_flags = MIZU_RUNTIME_FLAG_NONE;
 
     status = mizu_runtime_create(&runtime_config, &runtime);
     if (!expect_status("qwench runtime create", status, MIZU_STATUS_OK)) return 1;
 
-    if (!open_model_smoke(runtime, "/tmp/mizu_qwench_gguf_cuda_smoke/qwen35-9b", &qwen_model)) ok = 0;
+    if (!open_model_smoke(runtime, qwen_bundle_root, &qwen_model)) ok = 0;
     if (ok && !run_qwen_session_smoke(qwen_model)) ok = 0;
     if (qwen_model != NULL) {
         status = mizu_model_close(qwen_model);
         if (!expect_status("qwench qwen model close", status, MIZU_STATUS_OK)) ok = 0;
     }
 
-    if (ok && !open_model_smoke(runtime, "/tmp/mizu_qwench_gguf_cuda_smoke/gemma4-26b", &gemma_model)) ok = 0;
+    if (ok && !open_model_smoke(runtime, gemma_bundle_root, &gemma_model)) ok = 0;
     if (gemma_model != NULL) {
         status = mizu_model_close(gemma_model);
         if (!expect_status("qwench gemma model close", status, MIZU_STATUS_OK)) ok = 0;
@@ -226,43 +253,22 @@ int main(void) {
     if (!expect_status("qwench runtime destroy", status, MIZU_STATUS_OK)) ok = 0;
     if (!ok) return 1;
 
-    command_status = system("grep -R \"storage=q4_k\" /tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"storage=q4_k\" '%s' >/dev/null", weights_root);
+    command_status = system(command);
     if (!expect_true("qwench CUDA weight artifacts should retain q4_k storage", command_status == 0)) return 1;
-    command_status = system("grep -R \"storage=iq2_xxs\" /tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R \"storage=iq2_xxs\" '%s' >/dev/null", weights_root);
+    command_status = system(command);
     if (!expect_true("qwench CUDA weight artifacts should retain Gemma quantized storage", command_status == 0)) return 1;
-    command_status = system("grep -R -E \"source_offset=[1-9][0-9]*\" /tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "grep -R -E \"source_offset=[1-9][0-9]*\" '%s' >/dev/null", weights_root);
+    command_status = system(command);
     if (!expect_true("qwench CUDA weight artifacts should retain per-tensor source offsets", command_status == 0)) return 1;
-    command_status = system(
-        "python3 - <<'PY'\n"
-        "from pathlib import Path\n"
-        "import glob, struct, sys\n"
-        "ok = False\n"
-        "for path in glob.glob('/tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/weights/**/*.packbuffer', recursive=True):\n"
-        "    data = Path(path).read_bytes()\n"
-        "    if len(data) < 32:\n"
-        "        continue\n"
-        "    version = struct.unpack_from('<I', data, 4)[0]\n"
-        "    entry_bytes = struct.unpack_from('<I', data, 12)[0]\n"
-        "    count = struct.unpack_from('<I', data, 16)[0]\n"
-        "    if version < 2 or entry_bytes < 104 or count < 2:\n"
-        "        continue\n"
-        "    spans = []\n"
-        "    offsets = []\n"
-        "    for index in range(count):\n"
-        "        base = 32 + (index * entry_bytes)\n"
-        "        if base + 104 > len(data):\n"
-        "            break\n"
-        "        spans.append(struct.unpack_from('<q', data, base + 56)[0])\n"
-        "        offsets.append(struct.unpack_from('<q', data, base + 96)[0])\n"
-        "    if len({value for value in spans if value > 0}) >= 2 and len({value for value in offsets if value >= 0}) >= 2:\n"
-        "        ok = True\n"
-        "        break\n"
-        "sys.exit(0 if ok else 1)\n"
-        "PY");
-    if (!expect_true("qwench CUDA pack buffers should distinguish shared-GGUF tensor spans", command_status == 0)) return 1;
-    command_status = system("grep -R \"mm.0.weight\" /tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/weights >/dev/null");
+    snprintf(command, sizeof(command), "'%s' --check-packbuffer-tree '%s'", fixture_writer, weights_root);
+    if (!run_command("qwench packbuffer inspection", command)) return 1;
+    snprintf(command, sizeof(command), "grep -R \"mm.0.weight\" '%s' >/dev/null", weights_root);
+    command_status = system(command);
     if (!expect_true("qwench CUDA decoder weight pack should exclude mmproj tensors", command_status != 0)) return 1;
-    command_status = system("grep -R -E \"projector_bytes=[1-9]\" /tmp/mizu_qwench_gguf_cuda_smoke/cache/artifacts/cuda/cuda/projector >/dev/null");
+    snprintf(command, sizeof(command), "grep -R -E \"projector_bytes=[1-9]\" '%s' >/dev/null", projector_root);
+    command_status = system(command);
     if (!expect_true("qwench CUDA projector artifact should carry projector byte lineage", command_status == 0)) return 1;
 
     printf("test_qwench_gguf_cuda_smoke: PASS\n");

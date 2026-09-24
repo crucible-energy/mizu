@@ -1,0 +1,36 @@
+{
+  "schema_version": "crucible_sibling_evidence_packet_v1",
+  "repo": "crucible-energy/mizu",
+  "reviewed_at": "2026-09-24T17:09:37Z",
+  "posture": {
+    "kind": "research",
+    "summary": "Mizu is an experimental local inference runtime with a real control plane and placeholder backend execution. It does not yet run real Qwen/Gemma inference with real packed weights and backend math.",
+    "claim_label": "Observed"
+  },
+  "evidence_handles": [
+    {
+      "id": "current-project-posture",
+      "url": "https://github.com/crucible-energy/mizu/blob/main/README.md",
+      "claim_label": "Observed"
+    },
+    {
+      "id": "placeholder-runtime-boundary",
+      "url": "https://github.com/crucible-energy/mizu/blob/main/docs/PLACEHOLDER_RUNTIME_STATUS.md",
+      "claim_label": "Observed"
+    },
+    {
+      "id": "repo-safety-boundary",
+      "url": "https://github.com/crucible-energy/mizu/blob/main/docs/SAFETY_AUDIT.md",
+      "claim_label": "Observed"
+    }
+  ],
+  "privacy_and_security_boundary": {
+    "privacy": "Importer tools operate on local model files. No customer-data, telemetry, retention, or deployment privacy review is recorded; real model assets and caller inputs remain internal until the source owner completes that review.",
+    "security": "The repository documents bounded import parsing and fail-closed path handling, but does not claim security certification or deployment readiness. Credential, transport, authorization, and multi-tenant review remain open."
+  },
+  "disclosure_recommendation": "internal_only",
+  "owner_and_next_verifier": {
+    "owner": "Mizu source maintainer (runtime and importer evidence owner)",
+    "next_verifier": "Aletheia portfolio evidence review and Jazz Hands packet reconciliation; the Mizu source owner must approve any posture change, and the destination release owner must separately approve any disclosure."
+  }
+}

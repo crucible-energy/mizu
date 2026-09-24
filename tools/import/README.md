@@ -15,13 +15,14 @@ The first concrete target layout is documented in:
 
 ## HuggingFace Safetensors Smoke Importer
 
-`hf_safetensors_to_mizu.py` converts a local HuggingFace-style safetensors
-directory into the Mizu bundle shape without third-party Python dependencies.
+`hf_safetensors_to_mizu.zig` converts a local HuggingFace-style safetensors
+directory into the Mizu bundle shape. It uses Zig 0.16 and has no Python or
+third-party runtime dependency.
 
 Example:
 
 ```sh
-python3 tools/import/hf_safetensors_to_mizu.py /models/qwen-vl \
+zig run tools/import/hf_safetensors_to_mizu.zig -- /models/qwen-vl \
   --family qwen3_5 \
   --link-mode symlink
 ```
@@ -46,15 +47,14 @@ testing real local assets before backend math is complete.
 
 ## GGUF Smoke Importer
 
-`gguf_to_mizu.py` converts local GGUF model assets into the same Mizu bundle
-shape. It is also dependency-free and reads only GGUF metadata and tensor-info
-headers, so it can inspect large quantized model files without loading the
-weight payload into memory.
+`gguf_to_mizu.zig` converts local GGUF model assets into the same Mizu bundle
+shape. It reads only GGUF metadata and tensor-info headers, so it can inspect
+large quantized model files without loading the weight payload into memory.
 
 Example with a paired Qwen model and mmproj file:
 
 ```sh
-python3 tools/import/gguf_to_mizu.py ~/.qwench/models/qwen3.5-9b-instruct-q4_k_m.gguf \
+zig run tools/import/gguf_to_mizu.zig -- ~/.qwench/models/qwen3.5-9b-instruct-q4_k_m.gguf \
   --projector-gguf ~/.qwench/models/mmproj-Qwen_Qwen3.5-9B-f16.gguf \
   --output-root build/import-smoke/qwen35-9b \
   --link-mode symlink
@@ -63,7 +63,7 @@ python3 tools/import/gguf_to_mizu.py ~/.qwench/models/qwen3.5-9b-instruct-q4_k_m
 Example with a single Gemma GGUF:
 
 ```sh
-python3 tools/import/gguf_to_mizu.py ~/.qwench/models/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
+zig run tools/import/gguf_to_mizu.zig -- ~/.qwench/models/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
   --output-root build/import-smoke/gemma4-26b \
   --link-mode symlink
 ```

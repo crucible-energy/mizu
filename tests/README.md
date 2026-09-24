@@ -19,8 +19,8 @@ starts.
 - `performance/`
   - cold-versus-warm and optimizer convergence checks
 - `tooling/`
-  - safetensors/GGUF importer and developer-tool smoke tests that can run
-    without model hardware or third-party Python packages
+  - Zig safetensors/GGUF importer fixture, boundary, and bundle tests plus
+    developer-tool smoke tests that can run without model hardware
 - `fixtures/`
   - shared fake backend and tiny model fixtures
 

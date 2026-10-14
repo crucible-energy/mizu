@@ -10,8 +10,9 @@
   remains Zig-owned.
 - Existing non-Zig code may receive bounded correctness or safety repairs,
   contract preservation, and migration work. Record the reason and Zig port or
-  parity follow-up. A different new-language choice needs Sam's explicit
-  approval for that exact change; stricter project rules still apply.
+  parity follow-up. A language outside the Zig, Swift, and browser cases above
+  needs Sam's explicit approval for that exact change; stricter project rules
+  still apply.
 
 mizu / Crucible Contribution Guidance (Agents + Humans)
 

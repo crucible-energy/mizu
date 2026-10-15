@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## New Implementation Language
+
+- New repository-owned backend, runtime, CLI, tooling, adapter, evaluation,
+  and automation implementation must use Zig. Retained Go, Rust, Python, and
+  other languages are not alternate choices for new features.
+- macOS and iOS platform code may use Swift. Browser-facing UI may use
+  TypeScript, JavaScript, HTML, CSS, and Tailwind; shared and server behavior
+  remains Zig-owned.
+- Existing non-Zig code may receive bounded correctness or safety repairs,
+  contract preservation, and migration work. Record the reason and Zig port or
+  parity follow-up. A language outside the Zig, Swift, and browser cases above
+  needs Sam's explicit approval for that exact change; stricter project rules
+  still apply.
+
 mizu / Crucible Contribution Guidance (Agents + Humans)
 
 Last reviewed: July 3, 2026

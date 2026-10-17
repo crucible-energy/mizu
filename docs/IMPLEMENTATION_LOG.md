@@ -116,3 +116,43 @@
 - This migration removes Python from Mizu source and test execution. It does
   not certify that other Crucible Energy repositories have completed their
   separate language migrations.
+
+## 2026-10-17: Add an early README quick start
+
+### User Experience Findings
+
+- The 337-line README led with scope and a long implementation inventory, then
+  placed its only `make test` entry near the end at line 322. New contributors
+  had no short first-use path or explanation of what the test command proves.
+- The README linked a “Current State” document last updated on April 12, which
+  could be mistaken for a current status report.
+
+### Engineering Decisions
+
+- Added a compact quick start immediately after the honest backend boundary.
+  It points to the existing `make test` target and names its unit, C ABI
+  contract, and importer/tooling suites as confirmed by the Makefile.
+- Kept the historical implementation inventory in place, removed its duplicate
+  bottom-of-file test command, and dated the stale “Current State” link as a
+  snapshot. The quick start explicitly says that passing tests do not prove
+  real model inference.
+- Verified the wording against `Makefile`, `AGENTS.md`, and the current main
+  README at `6c67620ffb8d98e75ef6840f46736a9400215ecb`; no runtime or build
+  behavior changed.
+
+### Validation
+
+- The root README's 12 local links resolve at the pinned main tree;
+  `make format-check` and `git diff --check` pass.
+- `make test` passes on macOS. The unit and contract suites, four Zig importer
+  unit tests, and importer/developer-tool integration tests complete
+  successfully. The Qwench real-asset smoke skips because model assets are not
+  available locally; this does not qualify real inference.
+
+### Known Limitations
+
+- The backend paths remain placeholder-level and real Qwen/Gemma inference is
+  not established. `make test` validates the local contract and tooling suites,
+  not production inference.
+- `docs/CURRENT_STATE.md` remains a historical April 12 snapshot; refreshing
+  that document requires a separate source-backed status review.

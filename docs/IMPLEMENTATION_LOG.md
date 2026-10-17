@@ -139,11 +139,15 @@
 - Verified the wording against `Makefile`, `AGENTS.md`, and the current main
   README at `6c67620ffb8d98e75ef6840f46736a9400215ecb`; no runtime or build
   behavior changed.
+- Added Darwin's Objective-C compiler prerequisite after review confirmed that
+  `make test` builds `APPLE_BRIDGE_OBJ` with `$(OBJC)` on that platform.
 
 ### Validation
 
 - The root README's 12 local links resolve at the pinned main tree;
   `make format-check` and `git diff --check` pass.
+- The Darwin prerequisite matches the Makefile's `OBJC` and
+  `APPLE_BRIDGE_OBJ` rules.
 - `make test` passes on macOS. The unit and contract suites, four Zig importer
   unit tests, and importer/developer-tool integration tests complete
   successfully. The Qwench real-asset smoke skips because model assets are not

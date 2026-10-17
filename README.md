@@ -12,7 +12,8 @@ Current reality:
 
 ## Quick start
 
-Requirements: a Fortran compiler, C/C++ compilers, Make, and Zig. `nvcc` is
+Requirements: a Fortran compiler, C/C++ compilers, Make, and Zig. On Darwin,
+an Objective-C compiler is also required for the Apple bridge build. `nvcc` is
 optional; when it is unavailable, CUDA bridge tests use the CPU stub.
 
 From the repository root, build and run the local unit, C ABI contract, and

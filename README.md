@@ -10,6 +10,24 @@ Current reality:
 - `mizu` does not yet run real Qwen/Gemma inference with real packed weights
   and real backend math
 
+## Quick start
+
+Requirements: a Fortran compiler, C/C++ compilers, Make, and Zig. On Darwin,
+an Objective-C compiler is also required for the Apple bridge build. `nvcc` is
+optional; when it is unavailable, CUDA bridge tests use the CPU stub.
+
+From the repository root, build and run the local unit, C ABI contract, and
+importer/tooling suites:
+
+```sh
+make test
+```
+
+This validates the current runtime scaffolding. It does not demonstrate real
+model inference; the Apple and CUDA execution paths remain placeholder-level.
+See [the architecture](./docs/ARCHITECTURE.md) and
+[the C API specification](./docs/API_SPEC.md) for system and interface detail.
+
 The project is intentionally narrow:
 
 - Apple ANE is a priority target
@@ -319,17 +337,13 @@ Current implementation status:
   real Metal or ANE compute backend, and CUDA execution is still
   placeholder/scaffold-level rather than real transformer math
 
-Build and test:
-
-- `make test`
-
 Documentation:
 
 - [Architecture](./docs/ARCHITECTURE.md)
 - [API Spec](./docs/API_SPEC.md)
 - [Project Plan](./docs/PROJECT_PLAN.md)
 - [Task List](./docs/TASK_LIST.md)
-- [Current State](./docs/CURRENT_STATE.md)
+- [Current State snapshot (last updated 2026-04-12)](./docs/CURRENT_STATE.md)
 - [Importer Layout](./docs/IMPORTER_LAYOUT.md)
 - [Placeholder Runtime Status](./docs/PLACEHOLDER_RUNTIME_STATUS.md)
 - [Implementation Log](./docs/IMPLEMENTATION_LOG.md)
